@@ -4,22 +4,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Env-driven configuration."""
 
-    node_api_base: str = "https://api.optigoapps.com/internal"
+    # Required from .env — no hardcoded defaults so no secrets/URLs live in the repo.
+    node_api_base: str = ""
     registry_path: str = "app/registry.json"
     cache_dir: str = "./cache_data"
 
     # Real report API (Optigoapps report endpoint)
     use_real_api: bool = False
-    real_api_base_url: str = "http://newnextjs.web/api/report"
+    real_api_base_url: str = ""
     real_api_timeout: float = 60.0
     # TLS verification for the real API. Set to true in production (HTTPS).
     # Default false only for local dev where the API uses self-signed certs.
     real_api_verify_tls: bool = False
-    # Static session values for the chatbot SP (SP 240 = DynamicSalesReportDatabetaChatbot)
-    real_api_yearcode: str = "e3tuemVufX17ezIwfX17e29yYWlsMjV9fXt7b3JhaWwyNX19"
-    real_api_sp: int = 240
-    real_api_sv: str = "0"
-    real_api_version: str = "beta"
+    # Static session values for the chatbot SP — all required from .env.
+    real_api_yearcode: str = ""
+    real_api_sp: int = 0
+    real_api_sv: str = ""
+    real_api_version: str = ""
     # Shared LLM-chat SP number. When > 0, chat-mode (GetLLMChatSummary) requests
     # route to this single metadata-driven SP instead of each report's own SP,
     # so the GetLLMChatSummary block doesn't need to be copied into 100+ report SPs.
@@ -108,11 +109,17 @@ def validate_startup() -> list[str]:
     if s.cors_origins == "*":
         warnings.append("CORS_ORIGINS is '*' (allow all) — set an explicit allowlist for production")
 
-    if s.use_real_api and not s.real_api_verify_tls:
-        warnings.append("REAL_API_VERIFY_TLS is false — enable TLS verification for production")
-
-    if s.use_real_api and s.real_api_base_url.startswith("http://"):
-        warnings.append(f"REAL_API_BASE_URL uses HTTP ({s.real_api_base_url}) — use HTTPS for production")
+    if s.use_real_api:
+        if not s.real_api_base_url:
+            warnings.append("REAL_API_BASE_URL is not set — required when USE_REAL_API=true")
+        if not s.real_api_yearcode:
+            warnings.append("REAL_API_YEARCODE is not set — required when USE_REAL_API=true")
+        if not s.real_api_sp:
+            warnings.append("REAL_API_SP is not set — required when USE_REAL_API=true")
+        if not s.real_api_verify_tls:
+            warnings.append("REAL_API_VERIFY_TLS is false — enable TLS verification for production")
+        if s.real_api_base_url.startswith("http://"):
+            warnings.append(f"REAL_API_BASE_URL uses HTTP ({s.real_api_base_url}) — use HTTPS for production")
 
     if s.use_real_api and s.real_api_llm_chat_sp == 0:
         warnings.append("REAL_API_LLM_CHAT_SP is 0 — set to the deployed shared SP number for production")
