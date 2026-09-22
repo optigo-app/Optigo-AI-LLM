@@ -1,0 +1,680 @@
+{
+  "deprecated": true,
+  "note": "Legacy fallback. Per-report intents/fallbacks/canonical_values have moved to app/report_columns/<report>.json. Keep this file as a read-only fallback during migration; new reports should not be added here.",
+  "report_order": [
+    "wip_summary",
+    "sales_summary",
+    "purchase_summary",
+    "party_outstanding",
+    "stock_ledger",
+    "order_status"
+  ],
+  "canonical_values": {
+    "sales_summary": {
+      "category": {
+        "rings": "Ring",
+        "ring": "Ring",
+        "pendant": "Pendant",
+        "pendants": "Pendant",
+        "bangle": "Bangle",
+        "bangles": "Bangle",
+        "necklace": "Necklace",
+        "necklaces": "Necklace",
+        "earring": "Earring",
+        "earrings": "Earring",
+        "diamond jewellery": "Diamond Jewellery",
+        "diamond jewelry": "Diamond Jewellery",
+        "gold jewellery": "Gold Jewellery",
+        "gold jewelry": "Gold Jewellery",
+        "platinum jewellery": "Platinum Jewellery",
+        "platinum jewelry": "Platinum Jewellery",
+        "gold 14k": "GOLD 14K",
+        "gold 18k": "GOLD 18K",
+        "gold 22k": "GOLD 22K",
+        "22k gold": "GOLD 22K"
+      }
+    }
+  },
+  "fallback_intents": {
+    "sales_summary": {
+      "keywords": [
+        "total",
+        "sales",
+        "sold",
+        "amount"
+      ],
+      "intent": "total_sales",
+      "metric_key": "Amount",
+      "aggregation": "sum",
+      "unit": "currency"
+    },
+    "wip_summary": {
+      "keywords": [
+        "wip",
+        "work in progress",
+        "work-in-progress",
+        "in progress",
+        "jobs",
+        "pending jobs",
+        "production"
+      ],
+      "intent": "wip_total_cost",
+      "metric_key": "JobCost",
+      "aggregation": "sum",
+      "unit": "currency"
+    }
+  },
+  "patterns": {
+    "sales_summary": [
+      {
+        "regex": "\\b(biggest\\s+bill|largest\\s+bill|highest\\s+bill|single\\s+bill)\\b",
+        "intent": "max_bill",
+        "metric_key": "Amount",
+        "aggregation": "max",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(smallest\\s+bill|lowest\\s+bill)\\b",
+        "intent": "min_bill",
+        "metric_key": "Amount",
+        "aggregation": "min",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(top\\s+spending\\s+customer|best\\s+customer|biggest\\s+customer|top\\s+customer|highest\\s+spending\\s+customer)\\b|\\b(top|best|biggest|highest)\\s+\\d*\\s*customers?\\s+(by\\s+)?(revenue|sales|amount|spending)\\b|\\b(top|best|biggest|highest)\\s+\\d*\\s*customers?\\b",
+        "intent": "customer_sales_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "CustomerFullName",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(best\\s+sales\\s+rep|top\\s+\\d*\\s*sales\\s+reps?|top\\s+\\d+\\s+sales\\s+reps?\\s+by\\s+sales|best\\s+sales\\s+representative|which\\s+.*sales\\s+rep\\b)\\b|\\b(salespersons?|sales\\s*persons?|sales\\s*agents?|employees?|staff)\\b.*\\b(revenue|sales|amount|generat\\w*|most|highest|top|rank\\w*|performance|sold)\\b|\\b(who|which\\s+(salesperson|sales\\s*person|sales\\s*rep|employee|staff|agent))\\b.*\\b(generat\\w*|made|closed|sold|revenue|sales|most|highest)\\b|\\b(top|best|highest|biggest)\\s+\\d*\\s*(salespersons?|sales\\s*persons?|sales\\s*reps?|employees?|staff|agents?)\\b|\\b(salesperson|sales\\s*person|sales\\s*rep|employee)\\s+(ranking|performance|wise|breakdown)\\b",
+        "intent": "sales_rep_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "SalesRep",
+        "sort": "desc",
+        "limit": 1,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(best\\s+branch|top\\s+\\d*\\s*branches?|top\\s+\\d+\\s+branches?\\s+by\\s+sales|best\\s+performing\\s+branch|which\\s+.*branch\\s+.*\\b(best|top)\\b|branch\\s+wise|by\\s+branch|per\\s+branch)\\b",
+        "intent": "branch_sales_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "branch",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(top\\s+\\d*\\s*sub\\s*categor(?:y|ies)?|best\\s+sub\\s*categor(?:y|ies)?|sub\\s*category\\s+ranking|sub\\s*category[-\\s]wise|sales\\s+by\\s+sub\\s*category|sub-category-wise)\\b",
+        "intent": "subcategory_sales_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "subcategoryname",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(top\\s+\\d*\\s*categor(?:y|ies)?|best\\s+categor(?:y|ies)?|category\\s+ranking|sales\\s+by\\s+category|category[-\\s]wise)\\b",
+        "intent": "category_sales_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "categoryname",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(metal[-\\s]wise|by\\s+metal|sales\\s+by\\s+metal|top\\s+\\d*\\s*metals?\\s+by\\s+sales|best\\s+metal)\\b",
+        "intent": "metal_sales_ranking",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "dimension": "goldtypename",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\bhow\\s+many\\s+(bills|invoices)\\b",
+        "intent": "bill_count",
+        "metric_key": "total_count",
+        "aggregation": "count",
+        "unit": "count"
+      },
+      {
+        "regex": "\\bhow\\s+many\\s+diamond\\s+(pieces|items|jewellery|jewelry)\\b|\\b(total\\s+)?diamond\\s+(pcs|pieces)\\b",
+        "intent": "diamond_pieces_count",
+        "metric_key": "dpcs",
+        "aggregation": "sum",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(total\\s+)?gross\\s*wt\\b|\\b(total\\s+)?gross\\s+weight\\b|\\b(total\\s+)?grossweight\\b",
+        "intent": "gross_weight",
+        "metric_key": "grosswt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?net\\s*wt\\b|\\b(total\\s+)?net\\s+weight\\b|\\b(total\\s+)?netweight\\b",
+        "intent": "net_weight",
+        "metric_key": "netwt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(average\\s+bill|avg\\s+bill|average\\s+invoice|avg\\s+invoice)\\b",
+        "intent": "average_bill",
+        "metric_key": "Amount",
+        "aggregation": "avg",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(total\\s+)?(cs|colourstone|colorstone)\\s+(amt|amount|value|sales)\\b",
+        "intent": "colourstone_amount",
+        "metric_key": "ColorStoneAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?diamond\\s+(amt|amount|value|sales)\\b",
+        "intent": "diamond_amount",
+        "metric_key": "DiamondAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true,
+        "clear_filters": [
+          "category"
+        ]
+      },
+      {
+        "regex": "\\b(total\\s+)?(colourstone|colorstone)\\s+(amount|value|sales)\\b",
+        "intent": "colourstone_amount",
+        "metric_key": "ColorStoneAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true,
+        "clear_filters": [
+          "category"
+        ]
+      },
+      {
+        "regex": "\\b(total\\s+)?metal\\s+(amount|value|sales)\\b",
+        "intent": "metal_amount",
+        "metric_key": "MetalAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?labour\\s+(charges|amount)\\b",
+        "intent": "labour_amount",
+        "metric_key": "LabourAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?other\\s+(charges|amount)\\b",
+        "intent": "other_amount",
+        "metric_key": "OtherAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?discount\\b",
+        "intent": "discount_amount",
+        "metric_key": "Discount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(ring|rings)\\s+(category\\s+)?(sales|selling)\\b",
+        "intent": "ring_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\bhow\\s+are\\s+(ring|rings)\\s+selling\\b",
+        "intent": "ring_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(total\\s+sales|total\\s+amount|total\\s+value)\\b",
+        "intent": "total_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(Mumbai|Delhi|Head)\\s+(?:office|branch)?\\s+sales\\b",
+        "intent": "branch_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(branch\\s+sales|sales\\s+for\\s+(Mumbai|Delhi|Head))\\b",
+        "intent": "branch_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(Aurora|Vista|Royal|Elegance)\\b",
+        "intent": "brand_sales",
+        "metric_key": "Amount",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(total\\s+)?wastage\\s*(amt|amount|charges?)\\b",
+        "intent": "wastage_amount",
+        "metric_key": "WastageAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?wastage\\s*\\(\\s*pure\\s*\\)\\b|\\bwastage\\s+pure\\b",
+        "intent": "wastage_pure",
+        "metric_key": "WastagePure",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)\\b",
+        "intent": "unique_customers",
+        "metric_key": "unique_customers",
+        "aggregation": "count_distinct",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)\\b",
+        "intent": "unique_designs",
+        "metric_key": "unique_designs",
+        "aggregation": "count_distinct",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(total\\s+)?silver\\s+(pure\\s+)?(wt|weight)\\b",
+        "intent": "silver_pure_weight",
+        "metric_key": "SilverPureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?platinum\\s+(pure\\s+)?(wt|weight)\\b",
+        "intent": "platinum_pure_weight",
+        "metric_key": "PlatinumPureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?gold\\s+(pure\\s+)?(wt|weight)\\b",
+        "intent": "gold_pure_weight",
+        "metric_key": "GoldPureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?other\\s+metal\\s+(pure\\s+)?(wt|weight)\\b",
+        "intent": "other_metal_pure_weight",
+        "metric_key": "OtherMetalPureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?pure\\s+(wt|weight)\\b",
+        "intent": "total_pure_weight",
+        "metric_key": "TotalPureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(cs|colourstone|colorstone)\\s+(pcs|pieces)\\b",
+        "intent": "cs_pieces_count",
+        "metric_key": "cspcs",
+        "aggregation": "sum",
+        "unit": "count",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(cs|colourstone|colorstone)\\s*(ctw|carat)\\b",
+        "intent": "cs_ctw",
+        "metric_key": "csctw",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?diamond\\s*(ctw|carat)\\b",
+        "intent": "diamond_ctw",
+        "metric_key": "dctw",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?misc\\s*(pcs|pieces)\\b",
+        "intent": "misc_pcs_count",
+        "metric_key": "miscpcs",
+        "aggregation": "sum",
+        "unit": "count",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?misc\\s*(wt|weight)\\b",
+        "intent": "misc_weight",
+        "metric_key": "miscwt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?gold\\s+(amt|amount)\\b",
+        "intent": "gold_amount",
+        "metric_key": "GoldAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?silver\\s+(amt|amount)\\b",
+        "intent": "silver_amount",
+        "metric_key": "SilverAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?platinum\\s+(amt|amount)\\b",
+        "intent": "platinum_amount",
+        "metric_key": "PlatinumAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?other\\s+metal\\s+(amt|amount)\\b|\\btotal\\s+other\\s+m\\.\\s*amt\\b",
+        "intent": "other_metal_amount",
+        "metric_key": "OtherMetalAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?other\\s+metal\\s+(wt|weight)\\b",
+        "intent": "other_metal_weight",
+        "metric_key": "OtherMetalWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?setting\\s+(amt|amount)\\b",
+        "intent": "setting_amount",
+        "metric_key": "SettingAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?handling\\s+(amt|amount)\\b",
+        "intent": "handling_amount",
+        "metric_key": "HandlingAmt",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      }
+    ],
+    "wip_summary": [
+      {
+        "regex": "\\b(oldest\\s+jobs?|aging|aged|overdue|delayed|stuck\\s+jobs?|longest\\s+running)\\b",
+        "intent": "wip_aging",
+        "metric_key": "issue_age1",
+        "aggregation": "avg",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(top\\s+\\d*\\s*workers?|by\\s+worker|worker[-\\s]wise|by\\s+karigar|karigar[-\\s]wise)\\b",
+        "intent": "wip_worker_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "workername",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(top\\s+\\d*\\s*customers?\\s+(by\\s+)?(wip|jobs?)|by\\s+customer|customer[-\\s]wise)\\b",
+        "intent": "wip_customer_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "Customercode",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(category[-\\s]wise|by\\s+category|top\\s+\\d*\\s*categor(?:y|ies))\\b",
+        "intent": "wip_category_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "category",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(metal[-\\s]wise|by\\s+metal|top\\s+\\d*\\s*metals?)\\b",
+        "intent": "wip_metal_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "metal_type_name",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(job\\s*type[-\\s]wise|by\\s+job\\s*type|regular\\s+job|sample\\s+line\\s+job|repair\\s+job|recast\\s+job)\\b",
+        "intent": "wip_jobtype_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "jobtype",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(location[-\\s]wise|by\\s+location|top\\s+\\d*\\s*locations?)\\b",
+        "intent": "wip_location_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "JobLocation",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(brand[-\\s]wise|by\\s+brand|top\\s+\\d*\\s*brands?)\\b",
+        "intent": "wip_brand_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "brandname",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(top\\s+\\d*\\s*(departments?|stages?|statuses?)|by\\s+department|department[-\\s]wise|stage[-\\s]wise|status[-\\s]wise)\\b",
+        "intent": "wip_department_ranking",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "dimension": "department",
+        "sort": "desc",
+        "limit": 5,
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(how\\s+many\\s+\\w*\\s*(jobs|wip\\s+jobs)|jobs?\\s+in\\s+(progress|production|wip)|wip\\s+(count|jobs\\s+count)|number\\s+of\\s+\\w*\\s*(jobs|wip\\s+jobs))\\b",
+        "intent": "wip_job_count",
+        "metric_key": "total_count",
+        "aggregation": "count",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(total\\s+)?(wip\\s+)?(cost|value|amount)\\b|\\btotal\\s+wip\\b|\\bwip\\s+value\\b",
+        "intent": "wip_total_cost",
+        "metric_key": "JobCost",
+        "aggregation": "sum",
+        "unit": "currency"
+      },
+      {
+        "regex": "\\b(total\\s+)?(metal\\s+amount|metal\\s+value)\\b",
+        "intent": "wip_metal_amount",
+        "metric_key": "MetalAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(diamond\\s+amount|diamond\\s+value|dia\\s+amount)\\b",
+        "intent": "wip_diamond_amount",
+        "metric_key": "DiamondAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(amt|amount|value)\\b",
+        "intent": "wip_cs_amount",
+        "metric_key": "ColorStoneAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(making|mount|mounting)\\s+(amt|amount|charge)\\b",
+        "intent": "wip_making_amount",
+        "metric_key": "MountAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(labour|labor)\\s+(amt|amount|charge)\\b",
+        "intent": "wip_labour_amount",
+        "metric_key": "labourAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(finding|findings)\\s+(amt|amount)\\b",
+        "intent": "wip_finding_amount",
+        "metric_key": "FindingAmount",
+        "aggregation": "sum",
+        "unit": "currency",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(gross\\s*wt|gross\\s+weight|total\\s+weight)\\b",
+        "intent": "wip_gross_weight",
+        "metric_key": "GrossWeightgm",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(net\\s*wt|net\\s+weight)\\b",
+        "intent": "wip_net_weight",
+        "metric_key": "NetWtgm",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(pure\\s*wt|pure\\s+weight)\\b",
+        "intent": "wip_pure_weight",
+        "metric_key": "PureWt",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(diamond\\s+(used|ctw|carat|weight)|dia\\s+ctw)\\b",
+        "intent": "wip_diamond_used",
+        "metric_key": "Diamond_actualused",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(diamond\\s+(pcs|pieces)|dia\\s+pcs)\\b",
+        "intent": "wip_diamond_pcs",
+        "metric_key": "Diamond_actualusedpcs",
+        "aggregation": "sum",
+        "unit": "count",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(used|ctw|carat|weight)\\b",
+        "intent": "wip_cs_used",
+        "metric_key": "ColorStone_actualused",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(total\\s+)?(loss\\s+wt|loss\\s+weight|metal\\s+loss)\\b",
+        "intent": "wip_loss_weight",
+        "metric_key": "Total_LossWeight",
+        "aggregation": "sum",
+        "unit": "weight",
+        "is_field_metric": true
+      },
+      {
+        "regex": "\\b(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)\\b",
+        "intent": "wip_unique_designs",
+        "metric_key": "unique_designs",
+        "aggregation": "count_distinct",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)\\b",
+        "intent": "wip_unique_customers",
+        "metric_key": "unique_customers",
+        "aggregation": "count_distinct",
+        "unit": "count"
+      },
+      {
+        "regex": "\\b(total\\s+)?(qty|quantity|pieces|units)\\b",
+        "intent": "wip_total_qty",
+        "metric_key": "Quantity",
+        "aggregation": "sum",
+        "unit": "count"
+      }
+    ]
+  }
+}

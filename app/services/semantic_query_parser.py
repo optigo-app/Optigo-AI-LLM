@@ -1,0 +1,175 @@
+"""Semantic query parser — one LLM call replaces spell correction, report
+classification, filter extraction, intent detection, and WHERE clause generation.
+
+The LLM receives a compact semantic catalog (built from report_columns.json)
+and returns structured JSON that Python resolves to SP parameters.
+
+This module is now a thin orchestrator. Implementation lives in focused modules:
+  - catalog_builder.py   — metric/dimension/filter catalog + semantic catalog text
+  - prompt_builder.py    — system/user prompt construction
+  - metric_validator.py  — Layer-2 metric-type guard + unit classification
+  - parse_result.py      — ParseResult, ai_where validation, SP-param resolution
+
+All public names are re-exported here so existing imports keep working.
+"""
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from app.services import llm_gateway
+from app.middleware.audit_log import log_metric_validation
+
+# ── Re-exports (backward compatibility — existing imports unchanged) ──────────
+from app.services.catalog_builder import (  # noqa: F401
+    _get_valid_base_columns,
+    _get_cached_valid_columns,
+    _load_report_columns,
+    _get_metric_catalog,
+    _build_metric_catalog,
+    _build_dimension_catalog,
+    _build_filter_catalog,
+    _build_prompt_column_sections,
+    build_semantic_catalog,
+    _get_catalog,
+)
+from app.services.metric_validator import (  # noqa: F401
+    _detect_intent_type,
+    validate_metric_intent,
+    get_metric_unit,
+    get_metric_unit_label,
+    CURRENCY_METRICS,
+    WEIGHT_METRICS,
+    COUNT_METRICS,
+    RATE_METRICS,
+)
+from app.services.parse_result import (  # noqa: F401
+    validate_ai_where,
+    ParseResult,
+    resolve_to_sp_params,
+)
+from app.services.prompt_builder import (  # noqa: F401
+    _build_system_prompt,
+    _build_user_prompt,
+    _build_report_rules,
+    _build_ai_where_examples,
+    _get_column_filter_expr,
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def parse_query(
+    question: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    token_usage: Optional[List[Dict[str, int]]] = None,
+    report_name: str = "",
+) -> ParseResult:
+    """One LLM call to extract structured query intent.
+
+    This replaces: spell correction, report classification, filter extraction,
+    intent detection, and WHERE clause generation.
+
+    If report_name is provided (from frontend), only that report's catalog is used.
+    """
+    catalog = _get_catalog(report_name)
+
+    messages = [
+        {"role": "system", "content": _build_system_prompt(report_name)},
+        {"role": "user", "content": _build_user_prompt(question, catalog)},
+    ]
+
+    # Add recent history for follow-up questions
+    if history:
+        for msg in history[-4:]:
+            if msg.get("role") in ("user", "assistant"):
+                messages.insert(-1, {"role": msg["role"], "content": msg.get("content", "")[:200]})
+
+    try:
+        result = await llm_gateway.chat(
+            tier="cheap",
+            messages=messages,
+            temperature=0.0,
+            max_tokens=300,
+            response_format={"type": "json_object"},
+        )
+        if token_usage is not None:
+            token_usage.append({
+                "provider": result.usage.get("provider", "unknown"),
+                "prompt_tokens": result.usage.get("prompt_tokens", 0),
+                "completion_tokens": result.usage.get("completion_tokens", 0),
+                "estimated_cost_usd": result.usage.get("estimated_cost_usd", 0),
+            })
+        data = json.loads(result.text)
+        parsed = ParseResult(data)
+        # Layer 2: validate metric type vs question intent
+        # e.g. "material" (weight) should not return MetalAmount (amount)
+        original_metric = parsed.metric
+        corrected = validate_metric_intent(parsed.metric, question, parsed.report_key)
+        if corrected != parsed.metric:
+            parsed.metric = corrected
+            data["metric"] = corrected
+            parsed.raw["metric"] = corrected
+            # Align aggregation with the corrected metric's catalog type —
+            # e.g. Amount→total_count must also become agg=count, otherwise
+            # the SP receives SUM(DI.id) and fails with stat_code errors.
+            catalog = _get_metric_catalog(parsed.report_key)
+            corrected_type = catalog.get(corrected, {}).get("type", "amount")
+            _type_agg = {"count": "count", "rate": "avg", "text": "max"}
+            new_agg = _type_agg.get(corrected_type, "sum")
+            if parsed.aggregation != new_agg:
+                parsed.aggregation = new_agg
+                data["aggregation"] = new_agg
+                parsed.raw["aggregation"] = new_agg
+            # Structured audit trail
+            log_metric_validation(
+                layer=2,
+                question=question,
+                report_key=parsed.report_key,
+                original_metric=original_metric,
+                corrected_metric=corrected,
+                original_type=catalog.get(original_metric, {}).get("type", "amount"),
+                corrected_type=catalog.get(corrected, {}).get("type", "amount"),
+                intent_type=_detect_intent_type(question),
+                action="override",
+                reason=f"LLM returned {original_metric} but question intent is {_detect_intent_type(question)}",
+            )
+        # Layer 2b: validate extra_metrics — filter out type mismatches
+        if parsed.extra_metrics:
+            catalog = _get_metric_catalog(parsed.report_key)
+            primary_type = catalog.get(parsed.metric, {}).get("type", "amount")
+            valid_extras = []
+            dropped_extras = []
+            for em in parsed.extra_metrics:
+                em_type = catalog.get(em, {}).get("type", primary_type)
+                if em_type == primary_type:
+                    valid_extras.append(em)
+                else:
+                    dropped_extras.append(em)
+                    logger.warning(
+                        "Layer 2: dropping extra_metric %r (type=%s) — "
+                        "primary metric %r is type=%s",
+                        em, em_type, parsed.metric, primary_type
+                    )
+            if dropped_extras:
+                log_metric_validation(
+                    layer=2,
+                    question=question,
+                    report_key=parsed.report_key,
+                    original_metric=parsed.metric,
+                    corrected_metric=parsed.metric,
+                    original_type=primary_type,
+                    corrected_type=primary_type,
+                    intent_type=primary_type,
+                    action="drop_extra",
+                    reason=f"Dropped extra_metrics with mismatched type: {dropped_extras}",
+                    extra_metrics_dropped=dropped_extras,
+                )
+            parsed.extra_metrics = valid_extras
+        logger.info("Semantic parse: '%s' -> %s", question[:80], parsed)
+        return parsed
+    except json.JSONDecodeError as exc:
+        logger.error("Semantic parse JSON decode error: %s | raw: %s", exc, result.text[:200])
+        return ParseResult({"report_key": "sales_report", "metric": "Amount", "aggregation": "sum"})
+    except Exception as exc:
+        logger.error("Semantic parse error: %s", exc)
+        return ParseResult({"report_key": "sales_report", "metric": "Amount", "aggregation": "sum"})

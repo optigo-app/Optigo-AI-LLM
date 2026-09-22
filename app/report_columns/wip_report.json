@@ -1,0 +1,1379 @@
+{
+  "description": "WIP (work-in-progress) report — jobs in production, their status, costing, weights, and engaged materials",
+  "sp": 245,
+  "report_id": 21,
+  "default_metric": "JobCost",
+  "default_dimension": "department",
+  "tables": [
+    "ProductionManagement_SerialNoBook"
+  ],
+  "base_filter": "MasterManagement_productionstatusid NOT IN (28) AND iStore_IsJobClosed = 0 AND isMerged = 0 AND isETARejected = 0",
+  "columns": {
+    "jobentrydate": {
+      "sql": "jobentrydate",
+      "type": "date",
+      "desc": "Job entry date",
+      "grp": "date"
+    },
+    "jobpromisedate": {
+      "sql": "jobpromisedate",
+      "type": "date",
+      "desc": "Job promised delivery date",
+      "grp": "date"
+    },
+    "planningdate": {
+      "sql": "planningdate",
+      "type": "date",
+      "desc": "Job planning date",
+      "grp": "date"
+    },
+    "expstartdate": {
+      "sql": "expstartdate",
+      "type": "date",
+      "desc": "Expected start date",
+      "grp": "date"
+    },
+    "deliveryBatchDate": {
+      "sql": "deliveryBatchDate",
+      "type": "date",
+      "desc": "Delivery batch date",
+      "grp": "date"
+    },
+    "serialjobno": {
+      "sql": "serialjobno",
+      "type": "string",
+      "desc": "Serial job number",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "job",
+          "jobno",
+          "serial job",
+          "serial job no"
+        ],
+        "id_pattern": "Job#"
+      }
+    },
+    "SerialNo": {
+      "sql": "SerialNo",
+      "type": "string",
+      "desc": "Serial number",
+      "grp": "manufacturing"
+    },
+    "Designcode": {
+      "sql": "Designcode",
+      "type": "string",
+      "desc": "Design code",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "design",
+          "design code",
+          "design no"
+        ]
+      }
+    },
+    "designno": {
+      "sql": "Designcode",
+      "type": "string",
+      "desc": "Design No",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "design",
+          "design no",
+          "design number"
+        ]
+      }
+    },
+    "Customercode": {
+      "sql": "CustomerCode",
+      "type": "string",
+      "desc": "Customer code",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "customer",
+          "customer code"
+        ]
+      }
+    },
+    "JobBulkNo": {
+      "sql": "JobBulkNo",
+      "type": "string",
+      "desc": "Job bulk number",
+      "grp": "manufacturing"
+    },
+    "SKUNO": {
+      "sql": "iStore_JobSKUNO",
+      "type": "string",
+      "desc": "SKU",
+      "grp": "inventory",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sku",
+          "sku no"
+        ],
+        "id_pattern": "SKU#"
+      }
+    },
+    "MetalType": {
+      "sql": "MetalType",
+      "type": "string",
+      "desc": "Metal type",
+      "grp": "metal"
+    },
+    "MetalColor": {
+      "sql": "MetalColor",
+      "type": "string",
+      "desc": "Metal colour",
+      "grp": "metal",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "metal colour",
+          "metal color",
+          "colour"
+        ]
+      }
+    },
+    "metal_type_name": {
+      "sql": "Metal_Type_Name",
+      "type": "string",
+      "desc": "Metal type name",
+      "grp": "metal",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "metal",
+          "metal type"
+        ]
+      }
+    },
+    "category": {
+      "sql": "category",
+      "type": "string",
+      "desc": "Category",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "category",
+          "product category"
+        ]
+      }
+    },
+    "size": {
+      "sql": "size",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.mastermanagement_categoryid,0) = 1 THEN DI.Ring_FingerSize WHEN ISNULL(DI.mastermanagement_categoryid,0) = 2 THEN DI.PendentBailType WHEN ISNULL(DI.mastermanagement_categoryid,0) = 3 THEN DI.BraceletLength WHEN ISNULL(DI.mastermanagement_categoryid,0) = 4 THEN DI.BangelInsideDiameter WHEN ISNULL(DI.mastermanagement_categoryid,0) = 5 THEN DI.EaringLength WHEN ISNULL(DI.mastermanagement_categoryid,0) = 6 THEN DI.NecklaceLength WHEN ISNULL(DI.mastermanagement_categoryid,0) = 7 THEN DI.MiscellaneousFingersize ELSE DI.othersize END",
+      "desc": "Jewellery size (varies by category)",
+      "grp": "product"
+    },
+    "department": {
+      "sql": "department",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 33) THEN 'Bagging Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 34) THEN 'Bagging Completed' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 40) THEN 'Wax Engage Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 41) THEN 'Wax Engage Completed' WHEN ISNULL(DI.MasterManagement_productionstatusid,0) = 28 AND ISNULL(DI.isoutsource,0) = 1 THEN 'Out Source' ELSE ISNULL(DI.productionstatusname,'') END",
+      "desc": "Current production department / status",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "department",
+          "status",
+          "production status",
+          "stage"
+        ]
+      }
+    },
+    "Current_Departmentname": {
+      "sql": "Current_Departmentname",
+      "type": "string",
+      "desc": "Current department name",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "current department",
+          "department name"
+        ]
+      }
+    },
+    "MasterManagement_productionstatusid": {
+      "sql": "MasterManagement_productionstatusid",
+      "type": "int",
+      "desc": "Internal production status ID",
+      "grp": "status",
+      "fo": true
+    },
+    "JobLocation": {
+      "sql": "JobLocation",
+      "type": "string",
+      "calc": true,
+      "de": "IIF(ISNULL(DI.Mastermanagement_TransferTo_MFGJobLocationid,0) = 0, ISNULL(DI.Mastermanagement_MFG_JobLastLocationname,''), CONCAT(ISNULL(DI.Mastermanagement_MFG_JobLastLocationname,''), ' > ', ISNULL(DI.Mastermanagement_TransferTo_MFGJobLocationname,'')))",
+      "desc": "Job manufacturing location",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "location",
+          "job location"
+        ]
+      }
+    },
+    "workername": {
+      "sql": "workername",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.AssignEmployee_MiddleName,'') <> '' THEN ISNULL(DI.AssignEmployee_FirstName,'') + ' ' + ISNULL(DI.AssignEmployee_MiddleName,'') + ' ' + ISNULL(DI.AssignEmployee_LastName,'') ELSE ISNULL(DI.AssignEmployee_FirstName,'') + ' ' + ISNULL(DI.AssignEmployee_LastName,'') END",
+      "desc": "Assigned worker name",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "worker",
+          "employee",
+          "assigned to",
+          "karigar",
+          "staff",
+          "agent",
+          "salesperson",
+          "sales person"
+        ]
+      }
+    },
+    "LastProcessedBy": {
+      "sql": "LastProcessedBy",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.AssignEmployee_FirstName,'') <> '' AND ISNULL(DI.AssignEmployee_LastName,'') <> '' THEN ISNULL(DI.AssignEmployee_FirstName,'') + ' ' + ISNULL(DI.AssignEmployee_LastName,'') ELSE ISNULL(DI.LastProcessedBy_Name,'') END",
+      "desc": "Last processed by",
+      "grp": "manufacturing"
+    },
+    "brandname": {
+      "sql": "brandname",
+      "type": "string",
+      "desc": "Brand",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "brand"
+        ]
+      }
+    },
+    "jadauname": {
+      "sql": "jadauname",
+      "type": "string",
+      "desc": "Jadau (setting type)",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "jadau"
+        ]
+      }
+    },
+    "OrderTypeName": {
+      "sql": "OrderTypeName",
+      "type": "string",
+      "desc": "Order type",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "order type",
+          "ordertype"
+        ]
+      }
+    },
+    "maketypename": {
+      "sql": "maketypename",
+      "type": "string",
+      "desc": "Make type (handmade/casting)",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "make type",
+          "maketype"
+        ]
+      }
+    },
+    "jobtype": {
+      "sql": "jobtype",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.IsQuickRepairing,0) = 1 AND ISNULL(DI.Ismfgjob,0) = 0 THEN 'Repair Job' WHEN ISNULL(DI.REcnt,0) = 0 AND ISNULL(DI.ReverseEngage_parent_serialjobno,'') <> '' THEN 'Recast Job' WHEN (ISNULL(DI.IsSampleLineJob,0) = 0 AND ISNULL(DI.isquickrepairing,0) = 0) OR (ISNULL(DI.IsSampleLineJob,0) = 0 AND ISNULL(DI.Ismfgjob,0) = 1 AND ISNULL(DI.isquickrepairing,0) = 1) THEN 'Regular Job' WHEN (ISNULL(DI.IsSampleLineJob,0) = 1 AND ISNULL(DI.Ismfgjob,0) = 0 AND ISNULL(DI.isquickrepairing,0) = 0) OR (ISNULL(DI.IsSampleLineJob,0) = 1 AND ISNULL(DI.Ismfgjob,0) = 1 AND ISNULL(DI.isquickrepairing,0) = 1) THEN 'Sample Line Job' ELSE '' END",
+      "desc": "Job classification (Regular / Sample Line / Repair / Recast)",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "job type",
+          "jobtype"
+        ]
+      }
+    },
+    "withpip": {
+      "sql": "withpip",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.ismovetowip,0) = 1 THEN 'Without PIP' ELSE 'With PIP' END",
+      "desc": "PIP status (With PIP / Without PIP)",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "pip",
+          "with pip",
+          "without pip"
+        ]
+      }
+    },
+    "Quantity": {
+      "sql": "IsSplits_Quotation_Quantity",
+      "type": "int",
+      "desc": "Job quantity",
+      "grp": "manufacturing",
+      "unit": "pcs"
+    },
+    "JobCost": {
+      "sql": "JobCost",
+      "type": "decimal",
+      "desc": "Total job cost",
+      "grp": "costing",
+      "aliases": [
+        "job cost",
+        "total cost",
+        "cost"
+      ]
+    },
+    "MetalAmount": {
+      "sql": "MetalAmount",
+      "type": "decimal",
+      "desc": "Metal amount",
+      "grp": "costing",
+      "aliases": [
+        "metal amount",
+        "metal value"
+      ]
+    },
+    "MountAmount": {
+      "sql": "MountAmount",
+      "type": "decimal",
+      "desc": "Mounting/making amount",
+      "grp": "costing",
+      "aliases": [
+        "mount amount",
+        "mounting amount",
+        "making amount"
+      ]
+    },
+    "DiamondAmount": {
+      "sql": "DiamondAmount",
+      "type": "decimal",
+      "desc": "Diamond amount",
+      "grp": "costing",
+      "aliases": [
+        "diamond amount",
+        "diamond value",
+        "dia amount"
+      ]
+    },
+    "ColorStoneAmount": {
+      "sql": "ColorStoneAmount",
+      "type": "decimal",
+      "desc": "Colourstone amount",
+      "grp": "costing",
+      "aliases": [
+        "colourstone amount",
+        "color stone amount",
+        "cs amount",
+        "gemstone amount"
+      ]
+    },
+    "FindingAmount": {
+      "sql": "FindingAmount",
+      "type": "decimal",
+      "desc": "Finding amount",
+      "grp": "costing",
+      "aliases": [
+        "finding amount",
+        "findings amount"
+      ]
+    },
+    "AlloyAmount": {
+      "sql": "AlloyAmount",
+      "type": "decimal",
+      "desc": "Alloy amount",
+      "grp": "costing",
+      "aliases": [
+        "alloy amount"
+      ]
+    },
+    "miscAmount": {
+      "sql": "miscAmount",
+      "type": "decimal",
+      "desc": "Miscellaneous amount",
+      "grp": "costing",
+      "aliases": [
+        "misc amount",
+        "miscellaneous amount"
+      ]
+    },
+    "labourAmount": {
+      "sql": "labourAmount",
+      "type": "decimal",
+      "desc": "Labour amount",
+      "grp": "costing",
+      "aliases": [
+        "labour",
+        "labour amount"
+      ],
+      "calc": true,
+      "me": "CONVERT(DECIMAL(38,2),0)"
+    },
+    "GrossWeightgm": {
+      "sql": "lastmount_returnwt",
+      "type": "decimal",
+      "desc": "Gross weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "gross weight",
+        "gross wt",
+        "total weight"
+      ]
+    },
+    "NetWtgm": {
+      "sql": "netwt",
+      "type": "decimal",
+      "desc": "Net weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "net weight",
+        "net wt"
+      ]
+    },
+    "PureWt": {
+      "sql": "NetWt_Pure",
+      "type": "decimal",
+      "desc": "Pure weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "pure weight",
+        "pure wt",
+        "net pure wt"
+      ]
+    },
+    "EngagedFinding": {
+      "sql": "EngagedFinding",
+      "type": "decimal",
+      "desc": "Engaged finding weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "engaged finding",
+        "finding weight"
+      ]
+    },
+    "Diamond_actualused": {
+      "sql": "Diamond_actualused",
+      "type": "decimal",
+      "desc": "Diamond actual used (carat)",
+      "grp": "diamond",
+      "unit": "ctw",
+      "aliases": [
+        "diamond used",
+        "diamond weight",
+        "diamond ctw"
+      ]
+    },
+    "Diamond_actualusedpcs": {
+      "sql": "Diamond_actualusedpcs",
+      "type": "int",
+      "desc": "Diamond pieces used",
+      "grp": "diamond",
+      "unit": "pcs",
+      "aliases": [
+        "diamond pieces",
+        "diamond pcs",
+        "dia pcs"
+      ]
+    },
+    "ColorStone_actualused": {
+      "sql": "ColorStone_actualused",
+      "type": "decimal",
+      "desc": "Colourstone actual used (carat)",
+      "grp": "colour_stone",
+      "unit": "ctw",
+      "aliases": [
+        "colourstone used",
+        "color stone used",
+        "cs ctw",
+        "cs weight"
+      ]
+    },
+    "ColorStone_actualusedpcs": {
+      "sql": "ColorStone_actualusedpcs",
+      "type": "int",
+      "desc": "Colourstone pieces used",
+      "grp": "colour_stone",
+      "unit": "pcs",
+      "aliases": [
+        "colourstone pieces",
+        "cs pieces",
+        "cs pcs"
+      ]
+    },
+    "misc_actualused": {
+      "sql": "misc_actualused",
+      "type": "decimal",
+      "desc": "Misc actual used (carat)",
+      "grp": "misc",
+      "unit": "ctw",
+      "aliases": [
+        "misc used",
+        "misc weight"
+      ]
+    },
+    "misc_actualusedpcs": {
+      "sql": "misc_actualusedpcs",
+      "type": "int",
+      "desc": "Misc pieces used",
+      "grp": "misc",
+      "unit": "pcs",
+      "aliases": [
+        "misc pieces",
+        "misc pcs"
+      ]
+    },
+    "Total_LossWeight": {
+      "sql": "TotalDepartment_LossWeight",
+      "type": "decimal",
+      "desc": "Total department loss weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "loss weight",
+        "metal loss"
+      ]
+    },
+    "Casting_returnwt": {
+      "sql": "Casting_returnwt",
+      "type": "decimal",
+      "desc": "Casting return weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "casting return wt",
+        "casting return weight"
+      ]
+    },
+    "FinalPolish_returnwt": {
+      "sql": "FinalPolish_returnwt",
+      "type": "decimal",
+      "desc": "Final polish return weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "polish return wt",
+        "final polish return"
+      ]
+    },
+    "issue_age1": {
+      "sql": "issue_age1",
+      "type": "int",
+      "desc": "Issue age (hours since issue/entry)",
+      "grp": "manufacturing",
+      "aliases": [
+        "age",
+        "issue age",
+        "hours in process"
+      ],
+      "calc": true,
+      "me": "DATEDIFF(hour, ISNULL(DI.issuedate, DI.jobentrydate), GETDATE())"
+    },
+    "issue_age2": {
+      "sql": "issue_age2",
+      "type": "int",
+      "desc": "Days until expected start (negative = overdue)",
+      "grp": "manufacturing",
+      "aliases": [
+        "expected start age",
+        "days to start"
+      ],
+      "calc": true,
+      "me": "DATEDIFF(day, GETDATE(), DI.expstartdate)"
+    },
+    "IsQuickRepairing": {
+      "sql": "IsQuickRepairing",
+      "type": "int",
+      "desc": "Boolean: is this a quick repair job?",
+      "grp": "manufacturing",
+      "fo": true
+    },
+    "ismfgjob": {
+      "sql": "IsMFGJob",
+      "type": "int",
+      "desc": "Boolean: is this a manufacturing job?",
+      "grp": "manufacturing",
+      "fo": true
+    },
+    "isDeliveryBatchJob": {
+      "sql": "isDeliveryBatchJob",
+      "type": "int",
+      "desc": "Boolean: is this a delivery batch job?",
+      "grp": "manufacturing",
+      "fo": true
+    },
+    "ismovetowip": {
+      "sql": "ismovetowip",
+      "type": "int",
+      "desc": "Boolean: moved to WIP (1 = Without PIP)",
+      "grp": "manufacturing",
+      "fo": true
+    },
+    "customer_salesrep_customercode": {
+      "sql": "customer_salesrep_customercode",
+      "type": "string",
+      "desc": "Customer sales rep code",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sales rep",
+          "salesrep"
+        ]
+      }
+    },
+    "month": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(7), DI.jobentrydate, 120)",
+      "desc": "Month",
+      "grp": "date"
+    },
+    "year": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), DI.jobentrydate, 120)",
+      "desc": "Year",
+      "grp": "date"
+    }
+  },
+  "special_metrics": {
+    "total_count": {
+      "sql": "id",
+      "type": "count",
+      "description": "Total job count"
+    },
+    "unique_designs": {
+      "sql": "Designcode",
+      "type": "count_distinct",
+      "description": "Count of unique designs in progress"
+    },
+    "unique_customers": {
+      "sql": "Customercode",
+      "type": "count_distinct",
+      "description": "Count of unique customers with WIP jobs"
+    }
+  },
+  "filter_key_map": {
+    "category": "category",
+    "metal_type": "metal_type_name",
+    "metal": "metal_type_name",
+    "metalcolor": "MetalColor",
+    "metal_color": "MetalColor",
+    "brand": "brandname",
+    "brandname": "brandname",
+    "department": "department",
+    "current_department": "Current_Departmentname",
+    "jobtype": "jobtype",
+    "job_type": "jobtype",
+    "order_type": "OrderTypeName",
+    "ordertype": "OrderTypeName",
+    "make_type": "maketypename",
+    "maketype": "maketypename",
+    "location": "JobLocation",
+    "job_location": "JobLocation",
+    "worker": "workername",
+    "employee": "workername",
+    "jadau": "jadauname",
+    "withpip": "withpip",
+    "pip": "withpip",
+    "jobno": "serialjobno",
+    "serialjobno": "serialjobno",
+    "job": "serialjobno",
+    "designno": "designno",
+    "design": "designno",
+    "sku": "SKUNO",
+    "skuno": "SKUNO",
+    "customer": "Customercode",
+    "customercode": "Customercode",
+    "sales_rep": "customer_salesrep_customercode",
+    "salesrep": "customer_salesrep_customercode",
+    "isquickrepairing": "IsQuickRepairing",
+    "ismfgjob": "ismfgjob",
+    "ismovetowip": "ismovetowip",
+    "productionstatusid": "MasterManagement_productionstatusid",
+    "statusid": "MasterManagement_productionstatusid",
+    "start_date": "_date",
+    "end_date": "_date"
+  },
+  "metric_catalog": {
+    "JobCost": {
+      "type": "amount",
+      "label": "Total job cost",
+      "aliases": [
+        "job cost",
+        "total cost",
+        "cost",
+        "wip cost",
+        "wip value"
+      ]
+    },
+    "MetalAmount": {
+      "type": "amount",
+      "label": "Metal amount",
+      "aliases": [
+        "metal amount",
+        "metal value"
+      ]
+    },
+    "MountAmount": {
+      "type": "amount",
+      "label": "Making/mount amount",
+      "aliases": [
+        "mount amount",
+        "mounting amount",
+        "making amount",
+        "making charge"
+      ]
+    },
+    "DiamondAmount": {
+      "type": "amount",
+      "label": "Diamond amount",
+      "aliases": [
+        "diamond amount",
+        "diamond value",
+        "dia amount"
+      ]
+    },
+    "ColorStoneAmount": {
+      "type": "amount",
+      "label": "Colourstone amount",
+      "aliases": [
+        "colourstone amount",
+        "color stone amount",
+        "cs amount",
+        "gemstone amount"
+      ]
+    },
+    "FindingAmount": {
+      "type": "amount",
+      "label": "Finding amount",
+      "aliases": [
+        "finding amount",
+        "findings amount"
+      ]
+    },
+    "AlloyAmount": {
+      "type": "amount",
+      "label": "Alloy amount",
+      "aliases": [
+        "alloy amount"
+      ]
+    },
+    "miscAmount": {
+      "type": "amount",
+      "label": "Misc amount",
+      "aliases": [
+        "misc amount",
+        "miscellaneous amount"
+      ]
+    },
+    "labourAmount": {
+      "type": "amount",
+      "label": "Labour amount",
+      "aliases": [
+        "labour",
+        "labour amount"
+      ]
+    },
+    "GrossWeightgm": {
+      "type": "weight",
+      "label": "Gross weight",
+      "aliases": [
+        "gross weight",
+        "gross wt",
+        "total weight"
+      ]
+    },
+    "NetWtgm": {
+      "type": "weight",
+      "label": "Net weight",
+      "aliases": [
+        "net weight",
+        "net wt"
+      ]
+    },
+    "PureWt": {
+      "type": "weight",
+      "label": "Pure weight",
+      "aliases": [
+        "pure weight",
+        "pure wt",
+        "net pure wt"
+      ]
+    },
+    "EngagedFinding": {
+      "type": "weight",
+      "label": "Engaged finding",
+      "aliases": [
+        "engaged finding",
+        "finding weight"
+      ]
+    },
+    "Diamond_actualused": {
+      "type": "weight",
+      "label": "Diamond used",
+      "aliases": [
+        "diamond used",
+        "diamond weight",
+        "diamond ctw"
+      ]
+    },
+    "ColorStone_actualused": {
+      "type": "weight",
+      "label": "Colourstone used",
+      "aliases": [
+        "colourstone used",
+        "color stone used",
+        "cs ctw",
+        "cs weight"
+      ]
+    },
+    "misc_actualused": {
+      "type": "weight",
+      "label": "Misc used",
+      "aliases": [
+        "misc used",
+        "misc weight"
+      ]
+    },
+    "Total_LossWeight": {
+      "type": "weight",
+      "label": "Total loss weight",
+      "aliases": [
+        "loss weight",
+        "metal loss"
+      ]
+    },
+    "Casting_returnwt": {
+      "type": "weight",
+      "label": "Casting return weight",
+      "aliases": [
+        "casting return wt",
+        "casting return weight"
+      ]
+    },
+    "FinalPolish_returnwt": {
+      "type": "weight",
+      "label": "Final polish return",
+      "aliases": [
+        "polish return wt",
+        "final polish return"
+      ]
+    },
+    "Diamond_actualusedpcs": {
+      "type": "count",
+      "label": "Diamond pieces",
+      "aliases": [
+        "diamond pieces",
+        "diamond pcs",
+        "dia pcs"
+      ]
+    },
+    "ColorStone_actualusedpcs": {
+      "type": "count",
+      "label": "Colourstone pieces",
+      "aliases": [
+        "colourstone pieces",
+        "cs pieces",
+        "cs pcs"
+      ]
+    },
+    "misc_actualusedpcs": {
+      "type": "count",
+      "label": "Misc pieces",
+      "aliases": [
+        "misc pieces",
+        "misc pcs"
+      ]
+    },
+    "Quantity": {
+      "type": "count",
+      "label": "Job quantity",
+      "aliases": [
+        "quantity",
+        "qty",
+        "pieces",
+        "units"
+      ]
+    },
+    "issue_age1": {
+      "type": "count",
+      "label": "Issue age (hours)",
+      "aliases": [
+        "age",
+        "issue age",
+        "hours in process",
+        "hours"
+      ]
+    },
+    "issue_age2": {
+      "type": "count",
+      "label": "Days to start",
+      "aliases": [
+        "expected start age",
+        "days to start",
+        "overdue days"
+      ]
+    },
+    "total_count": {
+      "type": "count",
+      "label": "Job count",
+      "aliases": [
+        "how many jobs",
+        "job count",
+        "number of jobs",
+        "total jobs",
+        "wip count",
+        "how many wip"
+      ]
+    },
+    "unique_designs": {
+      "type": "count",
+      "label": "Unique designs",
+      "aliases": [
+        "how many designs",
+        "unique design",
+        "design count"
+      ]
+    },
+    "unique_customers": {
+      "type": "count",
+      "label": "Unique customers",
+      "aliases": [
+        "how many customers",
+        "unique customer",
+        "customer count"
+      ]
+    }
+  },
+  "prompt_rules": {
+    "special_rules": [
+      "WIP report covers jobs in progress (not closed, not merged, not outsource-status-28, not ETA-rejected). Do NOT include closed jobs.",
+      "Job status/department is a computed dimension derived from productionstatusid + isEngage + isWaxEngage flags. Use 'department' for production-stage questions.",
+      "JobCost is the total cost of a WIP job (metal + diamond + colourstone + making + findings + misc). Use JobCost for 'total WIP value/cost' questions.",
+      "Weights are in grams (GrossWeightgm, NetWtgm, PureWt, EngagedFinding) except diamond/colourstone/misc which are in carat (Diamond_actualused, ColorStone_actualused, misc_actualused).",
+      "issue_age1 is hours since issue/entry (higher = older job). issue_age2 is days until expected start (negative = overdue). Use these for aging/delay questions.",
+      "jobtype dimension classifies jobs as: Regular Job, Sample Line Job, Repair Job, Recast Job."
+    ],
+    "negative_examples": [
+      "total tax -> NOT applicable to WIP (no tax columns)",
+      "sales amount -> NOT applicable to WIP (use JobCost for total WIP value)"
+    ]
+  },
+  "intents": {
+    "wip_aging": {
+      "patterns": [
+        "\\b(oldest\\s+jobs?|aging|aged|overdue|delayed|stuck\\s+jobs?|longest\\s+running)\\b"
+      ],
+      "metric": "issue_age1",
+      "aggregation": "avg",
+      "unit": "count",
+      "label": "WIP aging"
+    },
+    "wip_worker_ranking": {
+      "patterns": [
+        "\\b(top\\s+\\d*\\s*workers?|by\\s+worker|worker[-\\s]wise|by\\s+karigar|karigar[-\\s]wise)\\b",
+        "\\b(workers?|karigars?|employees?|staff)\\b.*\\b(most|highest|top|best|rank\\w*|performance|jobs?|cost)\\b",
+        "\\b(who|which\\s+(worker|karigar|employee|staff))\\b.*\\b(most|highest|best|top|jobs?|worked)\\b",
+        "\\b(top|best|highest)\\s+\\d*\\s*(workers?|karigars?|employees?|staff)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "workername",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "top worker by job cost"
+    },
+    "wip_customer_ranking": {
+      "patterns": [
+        "\\btop\\s+\\d*\\s*customers?\\s+(by\\s+)?(wip|jobs?)\\b",
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(by\\s+customer|customer[-\\s]wise)\\b",
+        "\\b(by\\s+customer|customer[-\\s]wise)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "Customercode",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "top customer by WIP"
+    },
+    "wip_category_ranking": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(category[-\\s]wise|by\\s+category|top\\s+\\d*\\s*categor(?:y|ies))\\b",
+        "\\b(category[-\\s]wise|by\\s+category|top\\s+\\d*\\s*categor(?:y|ies))[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "category",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "category-wise WIP"
+    },
+    "wip_metal_ranking": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(metal[-\\s]wise|by\\s+metal|top\\s+\\d*\\s*metals?)\\b",
+        "\\b(metal[-\\s]wise|by\\s+metal|top\\s+\\d*\\s*metals?)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "metal_type_name",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "metal-wise WIP"
+    },
+    "wip_jobtype_ranking": {
+      "patterns": [
+        "\\b(job\\s*type[-\\s]wise|by\\s+job\\s*type|regular\\s+job|sample\\s+line\\s+job|repair\\s+job|recast\\s+job)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "jobtype",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "job-type-wise WIP"
+    },
+    "wip_location_ranking": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(location[-\\s]wise|by\\s+location|top\\s+\\d*\\s*locations?)\\b",
+        "\\b(location[-\\s]wise|by\\s+location|top\\s+\\d*\\s*locations?)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "JobLocation",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "location-wise WIP"
+    },
+    "wip_brand_ranking": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(brand[-\\s]wise|by\\s+brand|top\\s+\\d*\\s*brands?)\\b",
+        "\\b(brand[-\\s]wise|by\\s+brand|top\\s+\\d*\\s*brands?)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "brandname",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "brand-wise WIP"
+    },
+    "wip_department_ranking": {
+      "patterns": [
+        "\\b(top\\s+\\d*\\s*(departments?|stages?|statuses?)|by\\s+department|department[-\\s]wise|stage[-\\s]wise|status[-\\s]wise)\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "dimension": "department",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "department-wise WIP"
+    },
+    "wip_job_count": {
+      "patterns": [
+        "\\b(how\\s+many\\s+\\w*\\s*(jobs|wip\\s+jobs)|jobs?\\s+in\\s+(progress|production|wip)|wip\\s+(count|jobs\\s+count)|number\\s+of\\s+\\w*\\s*(jobs|wip\\s+jobs))\\b"
+      ],
+      "metric": "total_count",
+      "aggregation": "count",
+      "unit": "count",
+      "label": "Job count"
+    },
+    "wip_total_cost": {
+      "patterns": [
+        "\\b(total\\s+wip\\s+(cost|value|amount|jobs?)|wip\\s+(total\\s+)?(cost|value|amount)|job\\s+costs?|work\\s*in\\s*progress\\s+(cost|value|amount))\\b"
+      ],
+      "metric": "JobCost",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "Total WIP cost"
+    },
+    "wip_metal_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(metal\\s+amount|metal\\s+value)\\b",
+        "\\b(total\\s+)?(metal\\s+amount|metal\\s+value)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "MetalAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total metal amount"
+    },
+    "wip_diamond_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(diamond\\s+amount|diamond\\s+value|dia\\s+amount)\\b",
+        "\\b(total\\s+)?(diamond\\s+amount|diamond\\s+value|dia\\s+amount)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "DiamondAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total diamond amount"
+    },
+    "wip_cs_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(colourstone|colorstone|cs)\\s+(amt|amount|value)\\b",
+        "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(amt|amount|value)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "ColorStoneAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total colourstone amount"
+    },
+    "wip_making_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(making|mount|mounting)\\s+(amt|amount|charge)\\b",
+        "\\b(total\\s+)?(making|mount|mounting)\\s+(amt|amount|charge)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "MountAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total making amount"
+    },
+    "wip_labour_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(labour|labor)\\s+(amt|amount|charge)\\b",
+        "\\b(total\\s+)?(labour|labor)\\s+(amt|amount|charge)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "labourAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total labour amount"
+    },
+    "wip_finding_amount": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(finding|findings)\\s+(amt|amount)\\b",
+        "\\b(total\\s+)?(finding|findings)\\s+(amt|amount)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "FindingAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total finding amount"
+    },
+    "wip_gross_weight": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(gross\\s*wt|gross\\s+weight|total\\s+weight)\\b",
+        "\\b(total\\s+)?(gross\\s*wt|gross\\s+weight|total\\s+weight)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "GrossWeightgm",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total gross weight"
+    },
+    "wip_net_weight": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(net\\s*wt|net\\s+weight)\\b",
+        "\\b(total\\s+)?(net\\s*wt|net\\s+weight)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "NetWtgm",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total net weight"
+    },
+    "wip_pure_weight": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(pure\\s*wt|pure\\s+weight)\\b",
+        "\\b(total\\s+)?(pure\\s*wt|pure\\s+weight)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "PureWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total pure weight"
+    },
+    "wip_diamond_used": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(diamond\\s+(used|ctw|carat|weight)|dia\\s+ctw)\\b",
+        "\\b(total\\s+)?(diamond\\s+(used|ctw|carat|weight)|dia\\s+ctw)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "Diamond_actualused",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total diamond used"
+    },
+    "wip_diamond_pcs": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(diamond\\s+(pcs|pieces)|dia\\s+pcs)\\b",
+        "\\b(total\\s+)?(diamond\\s+(pcs|pieces)|dia\\s+pcs)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "Diamond_actualusedpcs",
+      "aggregation": "sum",
+      "unit": "count",
+      "is_field_metric": true,
+      "label": "Total diamond pieces"
+    },
+    "wip_cs_used": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(colourstone|colorstone|cs)\\s+(used|ctw|carat|weight)\\b",
+        "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(used|ctw|carat|weight)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "ColorStone_actualused",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total colourstone used"
+    },
+    "wip_loss_weight": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(loss\\s+wt|loss\\s+weight|metal\\s+loss)\\b",
+        "\\b(total\\s+)?(loss\\s+wt|loss\\s+weight|metal\\s+loss)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "Total_LossWeight",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total loss weight"
+    },
+    "wip_unique_designs": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)\\b",
+        "\\b(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "unique_designs",
+      "aggregation": "count_distinct",
+      "unit": "count",
+      "label": "Unique designs"
+    },
+    "wip_unique_customers": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)\\b",
+        "\\b(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "unique_customers",
+      "aggregation": "count_distinct",
+      "unit": "count",
+      "label": "Unique customers"
+    },
+    "wip_total_qty": {
+      "patterns": [
+        "\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b[^.]{0,80}(total\\s+)?(qty|quantity|pieces|units)\\b",
+        "\\b(total\\s+)?(qty|quantity|pieces|units)[^.]{0,80}\\b(wip|jobs?|work\\s*in\\s*progress|production|karigar|workers?)\\b"
+      ],
+      "metric": "Quantity",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Total quantity"
+    }
+  },
+  "canonical_values": {},
+  "report_keywords": [
+    "wip",
+    "work in progress",
+    "work-in-progress",
+    "in progress",
+    "job cost",
+    "jobs",
+    "pending jobs",
+    "production",
+    "manufacturing job",
+    "karigar",
+    "worker",
+    "department status",
+    "production status",
+    "bagging",
+    "wax engage",
+    "casting",
+    "finding amount",
+    "mount amount",
+    "making amount",
+    "alloy amount",
+    "engaged finding",
+    "issue age",
+    "overdue job",
+    "stuck job",
+    "job location",
+    "job type",
+    "regular job",
+    "sample line job",
+    "repair job",
+    "recast job",
+    "pip",
+    "jadau",
+    "make type",
+    "order type",
+    "delivery batch",
+    "job promised",
+    "expected start",
+    "planning date"
+  ],
+  "location_aliases": {
+    "mumbai": "BRANCH MUMBAI",
+    "delhi": "BRANCH DELHI",
+    "head": "HEAD OFFICE",
+    "head office": "HEAD OFFICE"
+  },
+  "fallback_intent": {
+    "patterns": [
+      "wip",
+      "work in progress",
+      "work-in-progress",
+      "in progress",
+      "jobs",
+      "pending jobs",
+      "production"
+    ],
+    "intent": "wip_total_cost",
+    "metric": "JobCost",
+    "aggregation": "sum",
+    "unit": "currency"
+  },
+  "suggested_questions": [
+      "total jobs in progress",
+      "wip aging report",
+      "department wise jobs",
+      "worker wise job count",
+      "total job cost",
+      "customer wise wip",
+      "jobs by location"
+  ]
+}

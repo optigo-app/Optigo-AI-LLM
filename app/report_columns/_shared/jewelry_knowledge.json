@@ -1,0 +1,38 @@
+{
+  "_comment": "Shared jewelry domain knowledge auto-merged into every report prompt_rules. Report-specific rules appended AFTER these.",
+  "metric_type_rules": [
+    "Metric types: [amount]=monetary value (Rs), [weight]=physical weight (gms/ct), [count]=number of records, [rate]=per-unit price.",
+    "Match the user intent type: material->weight metric, amount/value/cost->amount metric, how many->count metric, rate->rate metric.",
+    "NEVER return an [amount] metric when the user asks for weight/quantity. NEVER return a [weight] metric when the user asks for amount/value."
+  ],
+  "metal_knowledge": [
+    "Gold purity: DI.mastermanagement_goldtypename stores GOLD 18K, GOLD 22K, GOLD 14K, GOLD 24K. Always use LIKE for purity. Do NOT add Metal_Type_Name=gold when goldtypename implies it.",
+    "Metal specifics: gold amount->GoldAmt, gold weight->GoldWt, pure gold weight->Pure_Gold_Wt (same for silver/platinum). metal wise/by metal->dimension Metal_Type_Name.",
+    "Pure metal weights: pure silver->Pure_Silver_Wt, pure platinum->Pure_Platinum_Wt, pure other metal->Pure_Other_Wt. NEVER map pure metal weight to grosswt.",
+    "Other metals: other metal weight->OtherWt, other metal amount->OtherAmt.",
+    "Pieces: diamond pieces->dpcs, colourstone pieces->cspcs, misc pieces->miscpcs.",
+    "Costs: setting->TotalSettingCost, handling->TotalDiamondHandling, discount->Discount, unit cost->UnitCost, tunch->Tunch, wastage->Wastage.",
+    "CSAmt=ColorStoneAmount. design_TotalAmouont=Amount."
+  ],
+  "erp_conventions": [
+    "StockDocumentNo is the invoice/bill number. Job# uses StockBarcode. Use REPLACE(DI.StockBarcode,_,/) to normalize underscore formats.",
+    "Stockmanagement_Statusid=16 means sold/invoiced. StockDocumentNo <> empty filters out non-invoice records.",
+    "Date filters: use entrydate column for business date. Presets: today, yesterday, this_month, last_month, this_year, last_year, this_week, last_week."
+  ],
+  "negative_examples": [
+    "material->grosswt (NOT MetalAmount, NOT GoldAmt)",
+    "material used->grosswt (NOT MetalAmount)",
+    "gold amount->GoldAmt (NOT MetalAmount, NOT GoldWt)",
+    "gold weight->GoldWt (NOT GoldAmt, NOT grosswt)",
+    "total material->grosswt (NOT Amount, NOT MetalAmount)",
+    "how many bills->total_count+count (NOT GoldAmt, NOT Amount)",
+    "pure silver weight->Pure_Silver_Wt (NOT grosswt, NOT SilverWt)",
+    "pure platinum weight->Pure_Platinum_Wt (NOT grosswt, NOT PlatinumWt)",
+    "other metal weight->OtherWt (NOT grosswt, NOT MetalAmount)",
+    "other metal amount->OtherAmt (NOT MetalAmount, NOT Amount)",
+    "diamond pieces->dpcs (NOT total_count, NOT dctw)",
+    "colourstone pieces->cspcs (NOT total_count, NOT csctw)",
+    "setting amount->TotalSettingCost (NOT Amount, NOT LabourAmount)",
+    "discount->Discount (NOT Amount, NOT OtherAmount)"
+  ]
+}

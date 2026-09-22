@@ -1,0 +1,1296 @@
+{
+  "description": "Order report — job orders with quotation details, weights, amounts, and order status",
+  "sp": 245,
+  "report_id": 22,
+  "default_metric": "Amount",
+  "default_dimension": "Job_customercode",
+  "date_column": "jobdate",
+  "tables": [
+    "JobManagement_JobMaster",
+    "JobManagement_JobMaster_closed"
+  ],
+  "table_filters": {
+    "JobManagement_JobMaster_closed": "IsQuotationJobBillArchived=3"
+  },
+  "base_filter": "ISNULL(IsCustomizeJob,0)=0 AND ISNULL(IsBulkjob,0)=0 AND ISNULL(jobflowfrom,'')<>'Retail' AND ISNULL(SKUNO,'')<>'' AND ISNULL(isdelete,0)=0 AND jobflowfrom NOT IN ('advfgpurchaseneworder','ReceiveToRepair')",
+  "columns": {
+    "jobdate": {
+      "sql": "jobdate",
+      "type": "date",
+      "desc": "Job Date",
+      "grp": "date"
+    },
+    "SKUNO": {
+      "sql": "SKUNO",
+      "type": "string",
+      "desc": "SKU/Job No",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sku",
+          "skuno",
+          "job no",
+          "job number",
+          "order no"
+        ]
+      }
+    },
+    "po": {
+      "sql": "po",
+      "type": "string",
+      "desc": "PO No",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "po",
+          "purchase order",
+          "po number"
+        ]
+      }
+    },
+    "Job_customercode": {
+      "sql": "Job_customercode",
+      "type": "string",
+      "desc": "Customer",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "customer",
+          "customer code",
+          "client code"
+        ]
+      }
+    },
+    "Job_customerfirmname": {
+      "sql": "Job_customerfirmname",
+      "type": "string",
+      "desc": "Customer Name",
+      "grp": "customer",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "company",
+          "firm",
+          "customer name",
+          "client name"
+        ]
+      }
+    },
+    "SalesrepCode": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.SalesrepId,0)=0 THEN DI.Job_salesrepusercode ELSE DI.SalesrepCode END",
+      "desc": "Sales Rep",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sales rep",
+          "salesrep",
+          "sales person",
+          "salesperson",
+          "sales agent",
+          "employee",
+          "staff",
+          "agent",
+          "representative"
+        ]
+      }
+    },
+    "Quotation_SKUNo": {
+      "sql": "Quotation_SKUNo",
+      "type": "string",
+      "desc": "Quotation SKU",
+      "grp": "quotation",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "quotation sku",
+          "quotation",
+          "quote no"
+        ]
+      }
+    },
+    "QuotationNo": {
+      "sql": "QuotationNo",
+      "type": "string",
+      "desc": "Quotation No",
+      "grp": "quotation",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "quotation no",
+          "quote number"
+        ]
+      }
+    },
+    "Designcode": {
+      "sql": "Designcode",
+      "type": "string",
+      "desc": "Design",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "design",
+          "design code",
+          "design no"
+        ]
+      }
+    },
+    "jobflowfrom": {
+      "sql": "jobflowfrom",
+      "type": "string",
+      "desc": "Job Flow",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "job flow",
+          "flow from",
+          "order source"
+        ]
+      }
+    },
+    "Job_Quantity": {
+      "sql": "Job_Quantity",
+      "type": "int",
+      "desc": "Qty",
+      "grp": "order",
+      "unit": "pcs",
+      "aliases": [
+        "quantity",
+        "qty",
+        "pieces",
+        "units"
+      ]
+    },
+    "job_RemainingQuantity": {
+      "sql": "job_RemainingQuantity",
+      "type": "int",
+      "desc": "Rem Qty",
+      "grp": "order",
+      "unit": "pcs",
+      "aliases": [
+        "remaining qty",
+        "pending qty",
+        "balance qty"
+      ]
+    },
+    "IsSampleLineJob": {
+      "sql": "IsSampleLineJob",
+      "type": "int",
+      "desc": "Sample Line?",
+      "grp": "order",
+      "fo": true
+    },
+    "OrderTypeId": {
+      "sql": "OrderTypeId",
+      "type": "int",
+      "desc": "Order Type ID",
+      "grp": "order",
+      "fo": true
+    },
+    "loginUserCode": {
+      "sql": "loginUserCode",
+      "type": "string",
+      "desc": "Created By",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "created by",
+          "user code",
+          "login user"
+        ]
+      }
+    },
+    "designsetnolist": {
+      "sql": "designsetnolist",
+      "type": "string",
+      "desc": "Design Set",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "design set",
+          "set no",
+          "design set no"
+        ]
+      }
+    },
+    "isdesignsetjob": {
+      "sql": "isdesignsetjob",
+      "type": "int",
+      "desc": "Design Set?",
+      "grp": "product",
+      "fo": true
+    },
+    "JobManagement_ProgressStatusMasterid": {
+      "sql": "JobManagement_ProgressStatusMasterid",
+      "type": "int",
+      "desc": "Status ID",
+      "grp": "order",
+      "fo": true
+    },
+    "JobNo": {
+      "sql": "JobNo",
+      "type": "int",
+      "desc": "Job No",
+      "grp": "order",
+      "fo": true
+    },
+    "systemloginmaster_customerid": {
+      "sql": "systemloginmaster_customerid",
+      "type": "int",
+      "desc": "Customer ID",
+      "grp": "customer",
+      "fo": true
+    },
+    "systemloginmaster_salesrepid": {
+      "sql": "systemloginmaster_salesrepid",
+      "type": "int",
+      "desc": "Sales Rep ID",
+      "grp": "customer",
+      "fo": true
+    },
+    "IsCustomizeJob": {
+      "sql": "IsCustomizeJob",
+      "type": "int",
+      "desc": "Customized?",
+      "grp": "order",
+      "fo": true
+    },
+    "IsBulkjob": {
+      "sql": "IsBulkjob",
+      "type": "int",
+      "desc": "Bulk?",
+      "grp": "order",
+      "fo": true
+    },
+    "isdelete": {
+      "sql": "isdelete",
+      "type": "int",
+      "desc": "Deleted?",
+      "grp": "order",
+      "fo": true
+    },
+    "issupplierissue": {
+      "sql": "issupplierissue",
+      "type": "int",
+      "desc": "Supplier Issue?",
+      "grp": "order",
+      "fo": true
+    },
+    "IsSignature": {
+      "sql": "IsSignature",
+      "type": "int",
+      "desc": "Signature?",
+      "grp": "order",
+      "fo": true
+    },
+    "Prefix": {
+      "sql": "Prefix",
+      "type": "string",
+      "desc": "Prefix",
+      "grp": "order"
+    },
+    "Postfix": {
+      "sql": "Postfix",
+      "type": "string",
+      "desc": "Postfix",
+      "grp": "order"
+    },
+    "UNOPP": {
+      "sql": "UNOPP",
+      "type": "int",
+      "desc": "UNOPP",
+      "grp": "order",
+      "fo": true
+    },
+    "JobBulkNo": {
+      "sql": "JobBulkNo",
+      "type": "int",
+      "desc": "Bulk No",
+      "grp": "order",
+      "fo": true
+    },
+    "orders": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.IsSampleLineJob,0)=0 AND ISNULL(DI.jobflowfrom,'')<>'ReceiveToRepair' THEN 'Regular jobs' WHEN ISNULL(DI.IsSampleLineJob,0)=1 AND ISNULL(DI.jobflowfrom,'')<>'ReceiveToRepair' THEN 'Sample line jobs' ELSE '' END",
+      "desc": "Order Class",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "order type",
+          "job type",
+          "order classification"
+        ]
+      }
+    },
+    "orderType": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.OrderTypeId,0)=1 THEN 'Regular' WHEN ISNULL(DI.OrderTypeId,0)=2 THEN 'Corporate' ELSE '' END",
+      "desc": "Order Type",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "order type",
+          "corporate",
+          "regular order"
+        ]
+      }
+    },
+    "SoldPending": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.Job_Quantity,0)>0 AND ISNULL(DI.job_RemainingQuantity,0)=0 THEN 'sold' WHEN ISNULL(DI.Job_Quantity,0)>0 AND ISNULL(DI.job_RemainingQuantity,0)<>0 THEN 'pending' ELSE '' END",
+      "desc": "Status",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sold",
+          "pending",
+          "status",
+          "order status"
+        ]
+      }
+    },
+    "month": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(7), DI.jobdate, 120)",
+      "desc": "Month",
+      "grp": "date"
+    },
+    "year": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), DI.jobdate, 120)",
+      "desc": "Year",
+      "grp": "date"
+    },
+    "GrossWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(GrossCTWWithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(GrossCTWWithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Gross Wt",
+      "grp": "weight",
+      "unit": "gms",
+      "not_in_where": true,
+      "aliases": [
+        "gross weight",
+        "gross wt",
+        "total weight"
+      ]
+    },
+    "NetWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(Netwt,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(Netwt,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Net Wt",
+      "grp": "weight",
+      "unit": "gms",
+      "not_in_where": true,
+      "aliases": [
+        "net weight",
+        "net wt"
+      ]
+    },
+    "PureWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(CONVERT(DECIMAL(38,3),CASE WHEN ISNULL(mp_both.price_ratio,0)>0 AND ISNULL(mp_to.price_ratio,0)>0 THEN ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*mp_both.price_ratio/mp_to.price_ratio ELSE ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*ISNULL(mp_concat.price_ratio,0)/100 END)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo a LEFT JOIN {DBNAME}Mastermanagement_metaltype b ON a.MasterManagement_goldtypeid=b.autocode LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_to ON b.metaltypename=mp_to.metaltypename AND mp_to.IsBaseMetal=1 LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_both ON b.metaltypename=mp_both.metaltypename AND b.metalPurity=mp_both.metalPurity LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_concat ON CONCAT(mp_concat.metaltypename,' ',mp_concat.metalPurity)=b.metalPurity WHERE a.job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(CONVERT(DECIMAL(38,3),CASE WHEN ISNULL(mp_both.price_ratio,0)>0 AND ISNULL(mp_to.price_ratio,0)>0 THEN ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*mp_both.price_ratio/mp_to.price_ratio ELSE ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*ISNULL(mp_concat.price_ratio,0)/100 END)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive a LEFT JOIN {DBNAME}Mastermanagement_metaltype b ON a.MasterManagement_goldtypeid=b.autocode LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_to ON b.metaltypename=mp_to.metaltypename AND mp_to.IsBaseMetal=1 LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_both ON b.metaltypename=mp_both.metaltypename AND b.metalPurity=mp_both.metalPurity LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_concat ON CONCAT(mp_concat.metaltypename,' ',mp_concat.metalPurity)=b.metalPurity WHERE a.job_JobNo = DI.JobNo AND a.IsQuotationJobBillArchived=3)",
+      "desc": "Pure Wt",
+      "grp": "weight",
+      "unit": "gms",
+      "not_in_where": true,
+      "aliases": [
+        "pure weight",
+        "pure wt",
+        "net pure wt"
+      ]
+    },
+    "DiaPcs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(diamond_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(diamond_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Dia Pcs",
+      "grp": "diamond",
+      "unit": "pcs",
+      "not_in_where": true,
+      "aliases": [
+        "diamond pieces",
+        "diamond pcs",
+        "dia pcs"
+      ]
+    },
+    "DiaWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(DiamondCTWwithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(DiamondCTWwithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Dia Wt",
+      "grp": "diamond",
+      "unit": "ctw",
+      "not_in_where": true,
+      "aliases": [
+        "diamond weight",
+        "diamond ctw",
+        "dia weight"
+      ]
+    },
+    "CSPcs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(colorstone_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(colorstone_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "CS Pcs",
+      "grp": "colour_stone",
+      "unit": "pcs",
+      "not_in_where": true,
+      "aliases": [
+        "colourstone pieces",
+        "cs pieces",
+        "cs pcs"
+      ]
+    },
+    "CSWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(ActualColorStoneWeight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(ActualColorStoneWeight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "CS Wt",
+      "grp": "colour_stone",
+      "unit": "ctw",
+      "not_in_where": true,
+      "aliases": [
+        "colourstone weight",
+        "cs weight",
+        "cs ctw"
+      ]
+    },
+    "MiscPcs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(totalmiscpcs,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(totalmiscpcs,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Misc Pcs",
+      "grp": "misc",
+      "unit": "pcs",
+      "not_in_where": true,
+      "aliases": [
+        "misc pieces",
+        "misc pcs"
+      ]
+    },
+    "MiscWt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(totalmiscweight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(totalmiscweight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Misc Wt",
+      "grp": "misc",
+      "unit": "gms",
+      "not_in_where": true,
+      "aliases": [
+        "misc weight",
+        "misc wt"
+      ]
+    },
+    "MetalAmt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0))*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0))*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Metal Amt",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "metal amount",
+        "metal value",
+        "metal amt"
+      ]
+    },
+    "DiaAmt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(TotalDiaLGCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalDiaLGCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Dia Amt",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "diamond amount",
+        "diamond value",
+        "dia amount"
+      ]
+    },
+    "CSAmt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(TotalColorStoneCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalColorStoneCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "CS Amt",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "colourstone amount",
+        "cs amount",
+        "gemstone amount"
+      ]
+    },
+    "MiscAmt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(TotalMiscCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalMiscCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Misc Amt",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "misc amount",
+        "miscellaneous amount"
+      ]
+    },
+    "LOAmt": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)-((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0)+ISNULL(TotalDiaLGCost,0)+ISNULL(TotalColorStoneCost,0)+ISNULL(TotalMiscCost,0))*ISNULL(Quantity,0))),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)-((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0)+ISNULL(TotalDiaLGCost,0)+ISNULL(TotalColorStoneCost,0)+ISNULL(TotalMiscCost,0))*ISNULL(Quantity,0))),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Labour Amt",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "labour amount",
+        "labour",
+        "lo amount",
+        "making charge"
+      ]
+    },
+    "Amount": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "desc": "Amount",
+      "grp": "amount",
+      "unit": "currency",
+      "not_in_where": true,
+      "aliases": [
+        "amount",
+        "total amount",
+        "order amount",
+        "order value",
+        "total value"
+      ]
+    },
+    "QuotationJob": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "1",
+      "desc": "Quotation Jobs",
+      "grp": "order",
+      "not_in_where": true,
+      "aliases": [
+        "quotation job",
+        "job count"
+      ]
+    },
+    "ETAJobs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "CASE WHEN DI.JobManagement_ProgressStatusMasterid NOT IN (1,12) THEN 1 ELSE 0 END",
+      "desc": "ETA Jobs",
+      "grp": "order",
+      "not_in_where": true,
+      "aliases": [
+        "eta jobs",
+        "eta count"
+      ]
+    },
+    "RemJobs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "CASE WHEN DI.JobManagement_ProgressStatusMasterid IN (1,12) THEN 1 ELSE 0 END",
+      "desc": "Rem Jobs",
+      "grp": "order",
+      "not_in_where": true,
+      "aliases": [
+        "remaining jobs",
+        "rem jobs",
+        "pending jobs"
+      ]
+    }
+  },
+  "special_metrics": {
+    "total_count": {
+      "sql": "JobNo",
+      "type": "count",
+      "description": "Total order count"
+    },
+    "unique_customers": {
+      "sql": "Job_customercode",
+      "type": "count_distinct",
+      "description": "Count of unique customers with orders"
+    },
+    "unique_designs": {
+      "sql": "Designcode",
+      "type": "count_distinct",
+      "description": "Count of unique designs in orders"
+    }
+  },
+  "filter_key_map": {
+    "customer": "Job_customercode",
+    "customercode": "Job_customercode",
+    "customer_code": "Job_customercode",
+    "company": "Job_customerfirmname",
+    "firm": "Job_customerfirmname",
+    "customer_name": "Job_customerfirmname",
+    "salesrep": "SalesrepCode",
+    "sales_rep": "SalesrepCode",
+    "sales_person": "SalesrepCode",
+    "sku": "SKUNO",
+    "skuno": "SKUNO",
+    "job_no": "SKUNO",
+    "order_no": "SKUNO",
+    "po": "po",
+    "purchase_order": "po",
+    "design": "Designcode",
+    "designcode": "Designcode",
+    "design_no": "Designcode",
+    "quotation": "Quotation_SKUNo",
+    "quotation_no": "QuotationNo",
+    "quote_no": "QuotationNo",
+    "order_type": "orderType",
+    "ordertype": "orderType",
+    "orders": "orders",
+    "job_type": "orders",
+    "status": "SoldPending",
+    "sold_pending": "SoldPending",
+    "order_status": "SoldPending",
+    "job_flow": "jobflowfrom",
+    "flow_from": "jobflowfrom",
+    "design_set": "designsetnolist",
+    "set_no": "designsetnolist",
+    "created_by": "loginUserCode",
+    "user_code": "loginUserCode",
+    "start_date": "_date",
+    "end_date": "_date"
+  },
+  "name_filter_map": {
+    "customername": "Job_customerfirmname",
+    "customer_name": "Job_customerfirmname",
+    "company": "Job_customerfirmname",
+    "firm": "Job_customerfirmname",
+    "salesrep": "CASE WHEN ISNULL(DI.SalesrepId,0)=0 THEN DI.Job_salesrepusercode ELSE DI.SalesrepCode END"
+  },
+  "metric_catalog": {
+    "Amount": {
+      "type": "amount",
+      "label": "Total order amount",
+      "aliases": [
+        "amount",
+        "total amount",
+        "order amount",
+        "order value",
+        "total value",
+        "order total"
+      ]
+    },
+    "MetalAmt": {
+      "type": "amount",
+      "label": "Metal amount",
+      "aliases": [
+        "metal amount",
+        "metal value",
+        "metal amt"
+      ]
+    },
+    "DiaAmt": {
+      "type": "amount",
+      "label": "Diamond amount",
+      "aliases": [
+        "diamond amount",
+        "diamond value",
+        "dia amount"
+      ]
+    },
+    "CSAmt": {
+      "type": "amount",
+      "label": "Colourstone amount",
+      "aliases": [
+        "colourstone amount",
+        "cs amount",
+        "gemstone amount",
+        "color stone amount"
+      ]
+    },
+    "MiscAmt": {
+      "type": "amount",
+      "label": "Misc amount",
+      "aliases": [
+        "misc amount",
+        "miscellaneous amount"
+      ]
+    },
+    "LOAmt": {
+      "type": "amount",
+      "label": "Labour amount",
+      "aliases": [
+        "labour amount",
+        "labour",
+        "lo amount",
+        "making charge",
+        "making amount"
+      ]
+    },
+    "GrossWt": {
+      "type": "weight",
+      "label": "Gross weight",
+      "aliases": [
+        "gross weight",
+        "gross wt",
+        "total weight"
+      ]
+    },
+    "NetWt": {
+      "type": "weight",
+      "label": "Net weight",
+      "aliases": [
+        "net weight",
+        "net wt"
+      ]
+    },
+    "PureWt": {
+      "type": "weight",
+      "label": "Pure weight",
+      "aliases": [
+        "pure weight",
+        "pure wt",
+        "net pure wt"
+      ]
+    },
+    "DiaWt": {
+      "type": "weight",
+      "label": "Diamond weight",
+      "aliases": [
+        "diamond weight",
+        "diamond ctw",
+        "dia weight",
+        "dia ctw"
+      ]
+    },
+    "CSWt": {
+      "type": "weight",
+      "label": "Colourstone weight",
+      "aliases": [
+        "colourstone weight",
+        "cs weight",
+        "cs ctw",
+        "color stone weight"
+      ]
+    },
+    "MiscWt": {
+      "type": "weight",
+      "label": "Misc weight",
+      "aliases": [
+        "misc weight",
+        "misc wt"
+      ]
+    },
+    "DiaPcs": {
+      "type": "count",
+      "label": "Diamond pieces",
+      "aliases": [
+        "diamond pieces",
+        "diamond pcs",
+        "dia pcs"
+      ]
+    },
+    "CSPcs": {
+      "type": "count",
+      "label": "Colourstone pieces",
+      "aliases": [
+        "colourstone pieces",
+        "cs pieces",
+        "cs pcs",
+        "color stone pieces"
+      ]
+    },
+    "MiscPcs": {
+      "type": "count",
+      "label": "Misc pieces",
+      "aliases": [
+        "misc pieces",
+        "misc pcs"
+      ]
+    },
+    "Job_Quantity": {
+      "type": "count",
+      "label": "Job quantity",
+      "aliases": [
+        "quantity",
+        "qty",
+        "pieces",
+        "units",
+        "order qty"
+      ]
+    },
+    "job_RemainingQuantity": {
+      "type": "count",
+      "label": "Remaining quantity",
+      "aliases": [
+        "remaining qty",
+        "pending qty",
+        "balance qty"
+      ]
+    },
+    "QuotationJob": {
+      "type": "count",
+      "label": "Quotation job count",
+      "aliases": [
+        "quotation job",
+        "quotation count"
+      ]
+    },
+    "ETAJobs": {
+      "type": "count",
+      "label": "ETA jobs count",
+      "aliases": [
+        "eta jobs",
+        "eta count"
+      ]
+    },
+    "RemJobs": {
+      "type": "count",
+      "label": "Remaining jobs count",
+      "aliases": [
+        "remaining jobs",
+        "rem jobs",
+        "pending jobs"
+      ]
+    },
+    "total_count": {
+      "type": "count",
+      "label": "Order count",
+      "aliases": [
+        "how many orders",
+        "order count",
+        "number of orders",
+        "total orders",
+        "job count"
+      ]
+    },
+    "unique_customers": {
+      "type": "count",
+      "label": "Unique customers",
+      "aliases": [
+        "how many customers",
+        "unique customer",
+        "customer count"
+      ]
+    },
+    "unique_designs": {
+      "type": "count",
+      "label": "Unique designs",
+      "aliases": [
+        "how many designs",
+        "unique design",
+        "design count"
+      ]
+    }
+  },
+  "prompt_rules": {
+    "special_rules": [
+      "Order report covers job orders (not customized, not bulk, not retail, not deleted). Jobs must have a valid SKUNO.",
+      "Order data comes from JobManagement_JobMaster. Quotation metrics (weights, amounts) are computed from Quotationmanagement_dcbdesignInfo via job_JobNo.",
+      "Amount is the total order value (FinalAmount from quotation). Use Amount for 'total order value/amount' questions.",
+      "Weights are in grams (GrossWt, NetWt, PureWt, MiscWt) except diamond/colourstone which are in carat (DiaWt, CSWt).",
+      "orders dimension classifies jobs as: Regular jobs, Sample line jobs. orderType dimension classifies as: Regular, Corporate.",
+      "SoldPending dimension shows 'sold' (remaining qty = 0) or 'pending' (remaining qty > 0).",
+      "ETAJobs counts jobs with ProgressStatusMasterid NOT IN (1,12). RemJobs counts jobs with ProgressStatusMasterid IN (1,12)."
+    ],
+    "negative_examples": [
+      "total tax -> NOT applicable to order report (no tax columns)",
+      "sales amount -> NOT applicable to order report (use Amount for order value)",
+      "wip cost -> NOT applicable to order report (use Amount for order value)"
+    ]
+  },
+  "intents": {
+    "order_total_amount": {
+      "patterns": [
+        "\\b(total\\s+order\\s+(amount|value|total)|order\\s+(total\\s+)?(amount|value)|total\\s+amount|order\\s+total)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "Total order amount"
+    },
+    "order_count": {
+      "patterns": [
+        "\\b(how\\s+many\\s+\\w*\\s*(orders?|jobs?)|orders?\\s+count|number\\s+of\\s+\\w*\\s*(orders?|jobs?)|total\\s+orders?)\\b"
+      ],
+      "metric": "total_count",
+      "aggregation": "count",
+      "unit": "count",
+      "label": "Order count"
+    },
+    "order_customer_ranking": {
+      "patterns": [
+        "\\b(top\\s+\\d*\\s*customers?\\s+(by\\s+)?(orders?|order\\s+value))\\b",
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+customer|customer[-\\s]wise)\\b",
+        "\\b(by\\s+customer|customer[-\\s]wise)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "Job_customercode",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "top customer by order value"
+    },
+    "order_company_ranking": {
+      "patterns": [
+        "\\b(top\\s+\\d*\\s*(compan(?:y|ies)|firms?)\\s+(by\\s+)?(orders?|order\\s+value))\\b",
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+company|company[-\\s]wise|by\\s+firm|firm[-\\s]wise)\\b",
+        "\\b(by\\s+company|company[-\\s]wise|by\\s+firm|firm[-\\s]wise)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "Job_customerfirmname",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "top company by order value"
+    },
+    "order_salesrep_list": {
+      "patterns": [
+        "\\b(all\\s+)?(sales\\s*reps?|salespersons?)\\s+list\\b",
+        "\\blist\\s+(all\\s+)?(sales\\s*reps?|salespersons?)\\b",
+        "\\bshow\\s+(all\\s+)?(sales\\s*reps?|salespersons?)\\b"
+      ],
+      "metric": "total_count",
+      "aggregation": "count",
+      "dimension": "SalesrepCode",
+      "sort": "desc",
+      "limit": 50,
+      "unit": "count",
+      "label": "Sales rep list"
+    },
+    "order_salesrep_ranking": {
+      "patterns": [
+        "\\b(top\\s+\\d*\\s*(sales\\s*reps?|salespersons?)\\s+(by\\s+)?(orders?|order\\s+value))\\b",
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+sales\\s*rep|sales\\s*rep[-\\s]wise)\\b",
+        "\\b(by\\s+sales\\s*rep|sales\\s*rep[-\\s]wise)[^.]{0,80}\\b(orders?|order\\s+value)\\b",
+        "\\b(salespersons?|sales\\s*persons?|sales\\s*agents?|employees?|staff)\\b.*\\b(orders?|order\\s+value|generat\\w*|most|highest|top|rank\\w*|performance|sold)\\b",
+        "\\b(who|which\\s+(salesperson|sales\\s*person|sales\\s*rep|employee|staff|agent))\\b.*\\b(generat\\w*|made|closed|sold|orders?|most|highest)\\b",
+        "\\b(top|best|highest|biggest)\\s+\\d*\\s*(salespersons?|sales\\s*persons?|sales\\s*reps?|employees?|staff|agents?)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "SalesrepCode",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "top sales rep by order value"
+    },
+    "order_type_ranking": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+order\\s*type|order\\s*type[-\\s]wise|by\\s+type|type[-\\s]wise)\\b",
+        "\\b(by\\s+order\\s*type|order\\s*type[-\\s]wise|by\\s+type|type[-\\s]wise)[^.]{0,80}\\b(orders?|order\\s+value)\\b",
+        "\\b(regular\\s+orders?|corporate\\s+orders?|sample\\s+line\\s+orders?)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "orderType",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "order type wise"
+    },
+    "order_status_ranking": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+status|status[-\\s]wise|sold|pending)\\b",
+        "\\b(by\\s+status|status[-\\s]wise|sold|pending)[^.]{0,80}\\b(orders?|order\\s+value)\\b",
+        "\\b(sold\\s+orders?|pending\\s+orders?)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "SoldPending",
+      "sort": "desc",
+      "limit": 5,
+      "unit": "currency",
+      "label": "order status wise"
+    },
+    "order_monthly": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(by\\s+month|month[-\\s]wise|monthly)\\b",
+        "\\b(by\\s+month|month[-\\s]wise|monthly)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "month",
+      "sort": "desc",
+      "limit": 12,
+      "unit": "currency",
+      "label": "monthly orders"
+    },
+    "order_gross_weight": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(gross\\s*wt|gross\\s+weight|total\\s+weight)\\b",
+        "\\b(total\\s+)?(gross\\s*wt|gross\\s+weight|total\\s+weight)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "GrossWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total gross weight"
+    },
+    "order_net_weight": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(net\\s*wt|net\\s+weight)\\b",
+        "\\b(total\\s+)?(net\\s*wt|net\\s+weight)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "NetWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total net weight"
+    },
+    "order_pure_weight": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(pure\\s*wt|pure\\s+weight)\\b",
+        "\\b(total\\s+)?(pure\\s*wt|pure\\s+weight)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "PureWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total pure weight"
+    },
+    "order_diamond_weight": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(diamond\\s+(weight|ctw|carat)|dia\\s+(wt|ctw))\\b",
+        "\\b(total\\s+)?(diamond\\s+(weight|ctw|carat)|dia\\s+(wt|ctw))[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "DiaWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total diamond weight"
+    },
+    "order_diamond_pcs": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(diamond\\s+(pcs|pieces)|dia\\s+pcs)\\b",
+        "\\b(total\\s+)?(diamond\\s+(pcs|pieces)|dia\\s+pcs)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "DiaPcs",
+      "aggregation": "sum",
+      "unit": "count",
+      "is_field_metric": true,
+      "label": "Total diamond pieces"
+    },
+    "order_cs_weight": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(colourstone|colorstone|cs)\\s+(weight|ctw|carat)\\b",
+        "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(weight|ctw|carat)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "CSWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total colourstone weight"
+    },
+    "order_cs_pcs": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(colourstone|colorstone|cs)\\s+(pcs|pieces)\\b",
+        "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(pcs|pieces)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "CSPcs",
+      "aggregation": "sum",
+      "unit": "count",
+      "is_field_metric": true,
+      "label": "Total colourstone pieces"
+    },
+    "order_metal_amount": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(metal\\s+amount|metal\\s+value)\\b",
+        "\\b(total\\s+)?(metal\\s+amount|metal\\s+value)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "MetalAmt",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total metal amount"
+    },
+    "order_diamond_amount": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(diamond\\s+amount|diamond\\s+value|dia\\s+amount)\\b",
+        "\\b(total\\s+)?(diamond\\s+amount|diamond\\s+value|dia\\s+amount)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "DiaAmt",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total diamond amount"
+    },
+    "order_cs_amount": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(colourstone|colorstone|cs)\\s+(amt|amount|value)\\b",
+        "\\b(total\\s+)?(colourstone|colorstone|cs)\\s+(amt|amount|value)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "CSAmt",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total colourstone amount"
+    },
+    "order_labour_amount": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(labour|labor|making)\\s+(amt|amount|charge)\\b",
+        "\\b(total\\s+)?(labour|labor|making)\\s+(amt|amount|charge)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "LOAmt",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "label": "Total labour amount"
+    },
+    "order_quantity": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(qty|quantity|pieces|units)\\b",
+        "\\b(total\\s+)?(qty|quantity|pieces|units)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "Job_Quantity",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Total order quantity"
+    },
+    "order_pending_qty": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(total\\s+)?(remaining|pending|balance)\\s+(qty|quantity)\\b",
+        "\\b(total\\s+)?(remaining|pending|balance)\\s+(qty|quantity)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "job_RemainingQuantity",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Total pending quantity"
+    },
+    "order_unique_customers": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)\\b",
+        "\\b(unique\\s+customers?|how\\s+many\\s+customers?|distinct\\s+customers?)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "unique_customers",
+      "aggregation": "count_distinct",
+      "unit": "count",
+      "label": "Unique customers"
+    },
+    "order_unique_designs": {
+      "patterns": [
+        "\\b(orders?|order\\s+value)\\b[^.]{0,80}(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)\\b",
+        "\\b(unique\\s+designs?|how\\s+many\\s+designs?|distinct\\s+designs?)[^.]{0,80}\\b(orders?|order\\s+value)\\b"
+      ],
+      "metric": "unique_designs",
+      "aggregation": "count_distinct",
+      "unit": "count",
+      "label": "Unique designs"
+    }
+  },
+  "canonical_values": {
+    "orderType": {
+      "regular": "Regular",
+      "corporate": "Corporate"
+    },
+    "orders": {
+      "regular": "Regular jobs",
+      "regular jobs": "Regular jobs",
+      "sample": "Sample line jobs",
+      "sample line": "Sample line jobs",
+      "sample line jobs": "Sample line jobs"
+    },
+    "SoldPending": {
+      "sold": "sold",
+      "pending": "pending"
+    }
+  },
+  "report_keywords": [
+    "order",
+    "orders",
+    "order report",
+    "job order",
+    "customer order",
+    "sales order",
+    "purchase order",
+    "po",
+    "quotation",
+    "quote",
+    "order amount",
+    "order value",
+    "order status",
+    "pending order",
+    "sold order",
+    "regular order",
+    "corporate order",
+    "sample line",
+    "order type",
+    "order quantity",
+    "order date",
+    "customer",
+    "company",
+    "sales rep",
+    "design",
+    "sku"
+  ],
+  "location_aliases": {},
+  "fallback_intent": {
+    "patterns": [
+      "order",
+      "orders",
+      "order report",
+      "job order",
+      "customer order"
+    ],
+    "intent": "order_total_amount",
+    "metric": "Amount",
+    "aggregation": "sum",
+    "unit": "currency"
+  },
+  "suggested_questions": [
+      "today total orders",
+      "total order amount",
+      "top 5 customers by order amount",
+      "all sales rep list",
+      "order status wise count",
+      "net weight this month",
+      "total diamond amount",
+      "monthly order trend"
+  ]
+}

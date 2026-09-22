@@ -1,0 +1,37 @@
+{
+  "reports": [
+    {
+      "report_key": "sales_report",
+      "pid": 18351,
+      "api_endpoint": "/reports/sales-report",
+      "method": "GET",
+      "description": "Sales report with full column catalog.",
+      "response_mode": "list"
+    },
+    {
+      "report_key": "tax_report",
+      "pid": 18352,
+      "api_endpoint": "/reports/tax-report",
+      "method": "GET",
+      "description": "Tax report.",
+      "response_mode": "list"
+    },
+    {
+      "report_key": "wip_report",
+      "pid": 18422,
+      "api_endpoint": "/reports/wip-report",
+      "method": "GET",
+      "description": "WIP (work-in-progress) report — jobs in production.",
+      "response_mode": "list"
+    },
+    {
+      "report_key": "order_report",
+      "pid": 18498,
+      "api_endpoint": "/reports/order-report",
+      "method": "GET",
+      "description": "Order report — job orders with quotation details, weights, amounts, and order status.",
+      "response_mode": "list"
+    }
+  ],
+  "_comment": "filter_schema is AUTO-DERIVED from report_columns.json at startup. Do NOT add it manually here. To add filters, update filter_key_map in report_columns.json."
+}

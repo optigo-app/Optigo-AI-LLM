@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.Python
+
+# Environment / secrets
+.env
+.env.local
+*.env
+!.env.example
+
+# Runtime data / generated artifacts
+cache_data/
+docs/
+logs/
+Sample_SQL_Sp/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.log
+*.csv
+
+# Test / tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Backup / temp
+*.bak
+*.tmp
+*.orig
+*.swp
+~$*
+
+# Node / build (if any frontend tooling is added)
+node_modules/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

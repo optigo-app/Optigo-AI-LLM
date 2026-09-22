@@ -1,0 +1,119 @@
+{
+  "description": "Tax report — total tax, GST, and individual tax breakdowns from invoice documents",
+  "sp": 245,
+  "report_id": 20,
+  "default_metric": "TotalTax",
+  "default_dimension": "",
+  "tables": [
+    "Stockmanagement_dcb"
+  ],
+  "base_filter": "Stockmanagement_Statusid = 16 AND StockDocumentNo != ''",
+  "columns": {
+    "EntryDate": {
+      "sql": "entrydate",
+      "type": "date",
+      "desc": "Invoice entry date",
+      "grp": "date"
+    },
+    "StockDocumentNo": {
+      "sql": "StockDocumentNo",
+      "type": "string",
+      "desc": "Invoice/document number",
+      "grp": "inventory",
+      "filter": {"match": "exact", "aliases": ["invoice", "bill", "invoice no"], "id_pattern": "Invoice#"}
+    },
+    "TotalTax": {
+      "sql": "totaltaxAmount",
+      "type": "decimal",
+      "desc": "Total tax amount on the invoice",
+      "grp": "financial"
+    },
+    "TotalGST": {
+      "sql": "TotalGSTAmount",
+      "type": "decimal",
+      "desc": "Total GST amount on the invoice",
+      "grp": "financial"
+    },
+    "Tax1Amount": {
+      "sql": "tax1Amount",
+      "type": "decimal",
+      "desc": "Tax 1 amount (e.g. CGST)",
+      "grp": "financial"
+    },
+    "Tax2Amount": {
+      "sql": "tax2Amount",
+      "type": "decimal",
+      "desc": "Tax 2 amount (e.g. IGST)",
+      "grp": "financial"
+    },
+    "Tax3Amount": {
+      "sql": "tax3Amount",
+      "type": "decimal",
+      "desc": "Tax 3 amount (e.g. SGST)",
+      "grp": "financial"
+    },
+    "Tax4Amount": {
+      "sql": "tax4Amount",
+      "type": "decimal",
+      "desc": "Tax 4 amount",
+      "grp": "financial"
+    },
+    "Tax5Amount": {
+      "sql": "tax5Amount",
+      "type": "decimal",
+      "desc": "Tax 5 amount",
+      "grp": "financial"
+    },
+    "Tax1Name": {
+      "sql": "tax1_taxname",
+      "type": "string",
+      "desc": "Tax 1 name (e.g. CGST, SGST, IGST)",
+      "grp": "financial"
+    },
+    "Tax2Name": {
+      "sql": "tax2_taxname",
+      "type": "string",
+      "desc": "Tax 2 name",
+      "grp": "financial"
+    },
+    "Tax3Name": {
+      "sql": "tax3_taxname",
+      "type": "string",
+      "desc": "Tax 3 name",
+      "grp": "financial"
+    }
+  },
+  "special_metrics": {
+    "total_count": {
+      "sql": "id",
+      "type": "count",
+      "description": "Total invoice count"
+    }
+  },
+  "filter_key_map": {
+    "start_date": "_date",
+    "end_date": "_date"
+  },
+  "metric_catalog": {
+    "TotalTax": {"type": "amount", "label": "Total tax", "aliases": ["total tax", "tax amount", "tax"]},
+    "TotalGST": {"type": "amount", "label": "Total GST", "aliases": ["total gst", "gst amount", "gst"]},
+    "Tax1Amount": {"type": "amount", "label": "Tax 1 amount", "aliases": ["tax 1", "cgst"]},
+    "Tax2Amount": {"type": "amount", "label": "Tax 2 amount", "aliases": ["tax 2", "igst"]},
+    "Tax3Amount": {"type": "amount", "label": "Tax 3 amount", "aliases": ["tax 3", "sgst"]},
+    "Tax4Amount": {"type": "amount", "label": "Tax 4 amount", "aliases": ["tax 4"]},
+    "Tax5Amount": {"type": "amount", "label": "Tax 5 amount", "aliases": ["tax 5"]},
+    "total_count": {"type": "count", "label": "Invoice count", "aliases": ["invoice count", "bill count", "how many invoices"]}
+  },
+  "prompt_rules": {
+    "special_rules": [
+      "Tax breakdown: if user asks for CGST/SGST/IGST specifically, map to Tax1Amount/Tax3Amount/Tax2Amount respectively.",
+      "Total tax = TotalTax. Total GST = TotalGST. These may differ if non-GST taxes exist."
+    ]
+  },
+  "suggested_questions": [
+      "total tax this month",
+      "total gst amount",
+      "today tax summary",
+      "tax wise breakdown"
+  ]
+}
