@@ -1,0 +1,22 @@
+[
+  {"question":"What is the total sales value this month?","report_key":"sales_report","metric":"Amount","aggregation":"sum","date_preset":"this_month","limit":1},
+  {"question":"What is the total sales value of diamond in this month ?","report_key":"sales_report","metric":"DiamondAmount","aggregation":"sum","date_preset":"this_month","limit":1},
+  {"question":"What is the total sales value of diamond in this year ?","report_key":"sales_report","metric":"DiamondAmount","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"What is the total sales value of colorstone in this year ?","report_key":"sales_report","metric":"ColorStoneAmount","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"What is the total sales value of misc in this year ?","report_key":"sales_report","metric":"OtherAmount","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"What is the total sales value of labour in this year ?","report_key":"sales_report","metric":"LabourAmount","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"What is the total sales value today?","report_key":"sales_report","metric":"Amount","aggregation":"sum","date_preset":"today","limit":1},
+  {"question":"How many units/pieces were sold?","report_key":"sales_report","metric":"units_sold","aggregation":"count_distinct","limit":1},
+  {"question":"What is the sales growth % compared with the previous period?","report_key":"sales_report","metric":"Amount","aggregation":"sum","date_preset":"this_month","complexity":"COMPLEX"},
+  {"question":"Which month had the highest?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"month","sort":"desc","limit":1},
+  {"question":"Who are the highest-value customers?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"CustomerFullName","sort":"desc","limit":5},
+  {"question":"What is the average customer purchase value?","report_key":"sales_report","metric":"Amount","aggregation":"avg","limit":1},
+  {"question":"Which customer segment generates the most revenue?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"CustomerType","sort":"desc","limit":5},
+  {"question":"What is the total tax value this year?","report_key":"tax_report","metric":"TotalTax","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"Which salesperson generates the most revenue?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"SalesRep","sort":"desc","limit":1},
+  {"question":"What is the total discount given this year?","report_key":"sales_report","metric":"Discount","aggregation":"sum","date_preset":"this_year","limit":1},
+  {"question":"What is the total courier charges ?","report_key":"sales_report","metric":"OtherAmount","aggregation":"sum","limit":1},
+  {"question":"Which invoice had the highest?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"StockDocumentNo","sort":"desc","limit":1},
+  {"question":"Which invoice had the lowest sales?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"StockDocumentNo","sort":"asc","limit":1},
+  {"question":"Which month had the lowest sales?","report_key":"sales_report","metric":"Amount","aggregation":"sum","dimension":"month","sort":"asc","limit":1}
+]

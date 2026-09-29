@@ -90,6 +90,13 @@
       "description": "Total invoice count"
     }
   },
+  "dimension_aliases": {
+    "bill": "StockDocumentNo",
+    "bill no": "StockDocumentNo",
+    "invoice": "StockDocumentNo",
+    "invoice no": "StockDocumentNo",
+    "document": "StockDocumentNo"
+  },
   "filter_key_map": {
     "start_date": "_date",
     "end_date": "_date"
@@ -104,10 +111,102 @@
     "Tax5Amount": {"type": "amount", "label": "Tax 5 amount", "aliases": ["tax 5"]},
     "total_count": {"type": "count", "label": "Invoice count", "aliases": ["invoice count", "bill count", "how many invoices"]}
   },
+  "report_keywords": [
+    "tax",
+    "gst",
+    "cgst",
+    "sgst",
+    "igst",
+    "tcs",
+    "hsn",
+    "total tax",
+    "total gst",
+    "tax amount",
+    "gst amount",
+    "tax collected",
+    "tax collection",
+    "tax liability",
+    "tax summary",
+    "tax report",
+    "tax breakup",
+    "gst breakup",
+    "gst collected",
+    "bill wise tax",
+    "tax wise",
+    "monthly tax",
+    "tax register"
+  ],
+  "date_column": "EntryDate",
+  "intents": {
+    "tax_total": {
+      "patterns": [
+        "\\b(total\\s+tax|tax\\s+(amount|total|collected|collection|liability|summary))\\b"
+      ],
+      "metric": "TotalTax",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "Total tax"
+    },
+    "gst_total": {
+      "patterns": [
+        "\\b(total\\s+gst|gst\\s+(amount|total|collected|collection|breakup)|gst\\s+liability)\\b"
+      ],
+      "metric": "TotalGST",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "Total GST"
+    },
+    "bill_wise_tax": {
+      "patterns": [
+        "\\b((bill|invoice|document)\\s*wise\\s*tax|tax\\s+(per|by)\\s+(bill|invoice|document)|tax\\s+by\\s+bill)\\b"
+      ],
+      "metric": "TotalTax",
+      "aggregation": "sum",
+      "dimension": "StockDocumentNo",
+      "sort": "desc",
+      "limit": 10,
+      "unit": "currency",
+      "label": "Tax by bill"
+    },
+    "cgst": {
+      "patterns": ["\\bcgst\\b"],
+      "metric": "Tax1Amount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "CGST"
+    },
+    "igst": {
+      "patterns": ["\\bigst\\b"],
+      "metric": "Tax2Amount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "IGST"
+    },
+    "sgst": {
+      "patterns": ["\\bsgst\\b"],
+      "metric": "Tax3Amount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "SGST"
+    }
+  },
+  "fallback_intent": {
+    "patterns": [
+      "tax",
+      "gst",
+      "tcs",
+      "hsn"
+    ],
+    "intent": "tax_total",
+    "metric": "TotalTax",
+    "aggregation": "sum",
+    "unit": "currency"
+  },
   "prompt_rules": {
     "special_rules": [
       "Tax breakdown: if user asks for CGST/SGST/IGST specifically, map to Tax1Amount/Tax3Amount/Tax2Amount respectively.",
-      "Total tax = TotalTax. Total GST = TotalGST. These may differ if non-GST taxes exist."
+      "Total tax = TotalTax. Total GST = TotalGST. These may differ if non-GST taxes exist.",
+      "This report only has EntryDate, StockDocumentNo and tax amount columns. Never emit customer, category, design, or other unsupported filters or dimensions."
     ]
   },
   "suggested_questions": [

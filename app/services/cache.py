@@ -1,5 +1,7 @@
 import hashlib
+import re
 import time
+from datetime import date, timedelta
 from typing import Optional
 
 import diskcache
@@ -31,6 +33,7 @@ class ChatCache:
         response_mode: str = "normal",
         threshold: Optional[float] = None,
         report_key: Optional[str] = None,
+        date_context: str = "none",
     ) -> Optional[ChatResponse]:
         """Return a cached ChatResponse if a semantically similar question exists.
 
@@ -41,8 +44,9 @@ class ChatCache:
         the same question asked on a different report will not return a
         cached entry from another report.
         """
+        date_context = _resolve_date_context(question, date_context)
         # Stage 0: Exact-match lookup (no API call needed)
-        exact_key = _cache_key(question, company_code, user_id, response_mode, report_key)
+        exact_key = _cache_key(question, company_code, user_id, response_mode, report_key, date_context)
         exact_entry = self.cache.get(exact_key)
         if exact_entry and isinstance(exact_entry, dict):
             cached_response = exact_entry.get("response")
@@ -62,7 +66,7 @@ class ChatCache:
             # Embedding failure is non-fatal; treat as cache miss.
             return None
 
-        prefix = _key_prefix(company_code, user_id, response_mode, report_key)
+        prefix = _key_prefix(company_code, user_id, response_mode, report_key, date_context)
         best_score = threshold
         best_response: Optional[dict] = None
 
@@ -96,6 +100,7 @@ class ChatCache:
         response: ChatResponse,
         response_mode: str = "normal",
         report_key: Optional[str] = None,
+        date_context: str = "none",
     ) -> None:
         """Store a response with its question embedding.
 
@@ -105,7 +110,8 @@ class ChatCache:
         When `report_key` is provided, the entry is scoped to that report so
         it is only returned for the same report on a future lookup.
         """
-        key = _cache_key(question, company_code, user_id, response_mode, report_key)
+        date_context = _resolve_date_context(question, date_context)
+        key = _cache_key(question, company_code, user_id, response_mode, report_key, date_context)
 
         # Try to compute embedding for semantic similarity
         embedding = None
@@ -153,16 +159,34 @@ class ChatCache:
         self.cache.close()
 
 
-def _key_prefix(company_code: str, user_id: str, response_mode: str = "normal", report_key: Optional[str] = None) -> str:
+def _resolve_date_context(question: str, date_context: str) -> str:
+    if date_context != "none":
+        return date_context
+    explicit = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", question)
+    if explicit:
+        return ":".join(explicit[:2])
+    lowered = question.lower()
+    today = date.today()
+    if "today" in lowered:
+        return today.isoformat()
+    if "yesterday" in lowered:
+        return (today - timedelta(days=1)).isoformat()
+    if "this month" in lowered:
+        return f"{today.year:04d}-{today.month:02d}"
+    if "this year" in lowered:
+        return str(today.year)
+    return "none"
+
+
+def _key_prefix(company_code: str, user_id: str, response_mode: str = "normal", report_key: Optional[str] = None, date_context: str = "none") -> str:
     rk = report_key or "_any"
-    return f"{company_code}:{user_id}:{response_mode}:{rk}:"
+    return f"{company_code}:{user_id}:{response_mode}:{rk}:{settings.cache_schema_version}:{date_context}:"
 
 
-def _cache_key(question: str, company_code: str, user_id: str, response_mode: str = "normal", report_key: Optional[str] = None) -> str:
+def _cache_key(question: str, company_code: str, user_id: str, response_mode: str = "normal", report_key: Optional[str] = None, date_context: str = "none") -> str:
     normalized = question.strip().lower()
     question_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-    rk = report_key or "_any"
-    return f"{company_code}:{user_id}:{response_mode}:{rk}:{question_hash}"
+    return f"{_key_prefix(company_code, user_id, response_mode, report_key, date_context)}{question_hash}"
 
 
 def _cosine_similarity(a: list, b: list) -> float:

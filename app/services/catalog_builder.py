@@ -140,9 +140,9 @@ def _build_prompt_column_sections(report_key: str = "sales_report") -> Dict[str,
         if meta.get("filter_only"):
             filter_only_cols.append(name)
         elif meta.get("computed"):
-            if meta.get("metric_expr"):
+            if meta.get("metric_expr") or meta.get("table_metric_exprs"):
                 computed_metrics.append(name)
-            elif meta.get("dimension_expr"):
+            elif meta.get("dimension_expr") or meta.get("table_dimension_exprs"):
                 dimensions.append(name)
         else:
             if meta.get("type") == "string":

@@ -93,8 +93,9 @@ class TestIntentDetection(unittest.TestCase):
         self.assertEqual(spec.intent, "branch_sales_ranking")
         self.assertEqual(spec.dimension, "branch")
 
-    def test_salesrep_dimension_expr_in_p(self):
-        # _build_p must emit the SalesRep CONCAT dimension_expr, not a bare id.
+    def test_salesrep_dimension_uses_view_column(self):
+        # The SalesRep logic lives inside vw_LLMSalesReport, so _build_p only
+        # emits a plain column reference.
         import json
         from app.services.intent import IntentSpec
         from app.services.real_api_client import _build_p
@@ -106,7 +107,7 @@ class TestIntentDetection(unittest.TestCase):
         spec.limit = 5
         p = json.loads(_build_p("sales_report", spec, {}, ""))
         self.assertEqual(p["Dimension"], "SalesRep")
-        self.assertIn("usermanagement_salesrepid", p["DimensionExpr"])
+        self.assertEqual(p["DimensionExpr"], "ISNULL(DI.SalesRep,'')")
 
     def test_classify_routes_to_sales(self):
         # Classifier registry uses registry keys (sales_report), but legacy
@@ -382,7 +383,7 @@ class TestRealApiParser(unittest.TestCase):
         spec = detect_intent("Show me Mumbai branch sales", "sales_summary")
         p_json = _build_p("sales_summary", spec, {"categoryname": "Ring"})
         p = json.loads(p_json)
-        self.assertIn("mastermanagement_categoryname", p["FilterHeader"])
+        self.assertIn("categoryname", p["FilterHeader"])
         self.assertIn("Ring", p["FilterValue"])
 
     def test_sanitize_rejects_injection_metric(self):
@@ -602,6 +603,201 @@ class TestConfigDrivenScalability(unittest.TestCase):
         finally:
             column_registry._REGISTRY.clear()
             column_registry._REGISTRY.update(original_registry)
+
+
+class TestMarketContext(unittest.TestCase):
+    """External-market question detection + boundary notes."""
+
+    def test_internal_question_not_flagged(self):
+        from app.services.market_context import detect_market_context
+        for q in ("total sales today", "ring sales last month",
+                  "top 5 customers", "gold weight sold this month"):
+            self.assertIsNone(detect_market_context(q), q)
+
+    def test_market_trend_question_flagged(self):
+        from app.services.market_context import detect_market_context
+        ctx = detect_market_context("what is trending in the market")
+        self.assertIsNotNone(ctx)
+        self.assertTrue(ctx["is_external"])
+        self.assertEqual(ctx["topic"], "trends")
+
+    def test_market_comparison_flagged(self):
+        from app.services.market_context import detect_market_context
+        ctx = detect_market_context("compare our sales with market trends")
+        self.assertIsNotNone(ctx)
+        self.assertTrue(ctx["wants_comparison"])
+
+    def test_live_gold_rate_flagged(self):
+        from app.services.market_context import detect_market_context
+        ctx = detect_market_context("what is the current gold rate today")
+        self.assertIsNotNone(ctx)
+        self.assertEqual(ctx["topic"], "gold_rate")
+
+    def test_note_without_snapshot_is_honest(self):
+        from app.services.market_context import build_market_note
+        note = build_market_note(
+            {"is_external": True, "wants_comparison": False, "topic": "trends"}, []
+        )
+        self.assertIn("don't have a live market-data source", note)
+        self.assertIn("your own", note)
+
+    def test_note_with_snapshot_cites_source(self):
+        from app.services.market_context import build_market_note
+        snap = [{
+            "topic": "trends",
+            "observation": "Lightweight jewellery demand rising",
+            "source_name": "TestFeed",
+            "source_url": "https://example.com/x",
+            "retrieved_at": "2026-09-01T00:00:00Z",
+        }]
+        note = build_market_note(
+            {"is_external": True, "wants_comparison": True, "topic": "trends"}, snap
+        )
+        self.assertIn("Lightweight jewellery demand rising", note)
+        self.assertIn("TestFeed", note)
+        self.assertIn("External market context", note)
+
+    def test_unsourced_snapshot_entries_dropped(self):
+        from app.services import market_context
+        import json, tempfile
+        fake = {
+            "entries": [
+                {"observation": "no source", "topic": "trends"},
+                {"observation": "sourced", "topic": "trends",
+                 "source_name": "S", "retrieved_at": "2026-01-01"},
+            ]
+        }
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False, encoding="utf-8"
+        ) as fh:
+            json.dump(fake, fh)
+            tmp = fh.name
+        orig = market_context._MARKET_DATA_PATH
+        try:
+            market_context._MARKET_DATA_PATH = tmp
+            entries = market_context.load_market_snapshot()
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["observation"], "sourced")
+        finally:
+            market_context._MARKET_DATA_PATH = orig
+            os.unlink(tmp)
+
+
+class TestInvalidFilterValues(unittest.TestCase):
+    """Config-driven rejection of metric words leaked into filters."""
+
+    def test_validated_filters_drops_invalid_category_value(self):
+        from app.services.query_plan import QueryPlan, QueryFilter
+        plan = QueryPlan(
+            report_key="sales_report", intent="sum", metric="netwt",
+            filters=[QueryFilter(field="category", value="net")],
+        )
+        self.assertEqual(plan.validated_filters(), {})
+
+    def test_validated_filters_keeps_valid_category(self):
+        from app.services.query_plan import QueryPlan, QueryFilter
+        plan = QueryPlan(
+            report_key="sales_report", intent="sum", metric="netwt",
+            filters=[QueryFilter(field="category", value="Ring")],
+        )
+        self.assertEqual(plan.validated_filters(), {"category": "Ring"})
+
+    def test_customer_filter_drops_diamond_value(self):
+        from app.services.query_plan import QueryPlan, QueryFilter
+        plan = QueryPlan(
+            report_key="sales_report", intent="sum", metric="Cu_DiaWt",
+            filters=[QueryFilter(field="customer", value="diamond")],
+        )
+        self.assertEqual(plan.validated_filters(), {})
+
+    def test_ai_where_drops_invalid_name_clause(self):
+        from app.services.parse_result import validate_ai_where
+        clause = "ISNULL(DI.CustomerName,'') LIKE '%diamond%' AND DI.categoryname='ring'"
+        out = validate_ai_where(clause, "sales_report")
+        self.assertEqual(out, "DI.categoryname='ring'")
+
+    def test_ai_where_keeps_real_customer_name(self):
+        from app.services.parse_result import validate_ai_where
+        clause = "ISNULL(DI.CustomerName,'') LIKE '%diamond traders%'"
+        out = validate_ai_where(clause, "sales_report")
+        self.assertIn("diamond traders", out)
+
+    def test_customer_diamond_metrics_resolve(self):
+        from app.services.metric_validator import validate_metric_intent
+        # 'customer diamond weight' intent_type=weight; Cu_DiaWt is now type=weight
+        # so it must NOT be overridden away.
+        self.assertEqual(
+            validate_metric_intent("Cu_DiaWt", "customer diamond weight"),
+            "Cu_DiaWt",
+        )
+        self.assertEqual(
+            validate_metric_intent("Co_DiaPCS", "company diamond pieces"),
+            "Co_DiaPCS",
+        )
+
+
+class TestMultiPeriodDetection(unittest.TestCase):
+    """detect_periods / is_time_dimension used by the multi-period path."""
+
+    def test_multi_period_question(self):
+        from app.services.orchestrator import detect_periods
+        self.assertEqual(
+            detect_periods("gross wt for this year today and month"),
+            ["this_year", "this_month", "today"],
+        )
+
+    def test_comparison_question_keeps_both_periods(self):
+        from app.services.orchestrator import detect_periods
+        self.assertEqual(
+            detect_periods("compare sales this month vs last month"),
+            ["last_month", "this_month"],
+        )
+
+    def test_single_period_questions(self):
+        from app.services.orchestrator import detect_periods
+        self.assertEqual(detect_periods("total sales"), [])
+        self.assertEqual(detect_periods("monthly trend"), ["this_month"])
+        self.assertEqual(detect_periods("sales this year"), ["this_year"])
+
+    def test_two_day_periods(self):
+        from app.services.orchestrator import detect_periods
+        self.assertEqual(
+            detect_periods("sales today and yesterday"),
+            ["yesterday", "today"],
+        )
+
+    def test_bare_month_only_with_named_period(self):
+        from app.services.orchestrator import detect_periods
+        # Bare "month"/"year" alone must not fire (ordinary phrasing)
+        self.assertEqual(detect_periods("show month data"), [])
+        self.assertEqual(detect_periods("year and month totals"), [])
+        # But with a qualified period present, bare words count as current period
+        self.assertIn("this_month", detect_periods("this year and month totals"))
+        self.assertIn("this_year", detect_periods("today and year totals"))
+
+    def test_dedup(self):
+        from app.services.orchestrator import detect_periods
+        self.assertEqual(
+            detect_periods("today today today"), ["today"],
+        )
+
+    def test_is_time_dimension(self):
+        from app.services.orchestrator import is_time_dimension
+        self.assertTrue(is_time_dimension("month"))
+        self.assertTrue(is_time_dimension("Year"))
+        self.assertFalse(is_time_dimension("designname"))
+        self.assertFalse(is_time_dimension(""))
+        self.assertFalse(is_time_dimension(None))
+
+    def test_resolve_preset_dates(self):
+        from datetime import date
+        from app.services.orchestrator import resolve_preset_dates
+        s, e = resolve_preset_dates("today")
+        self.assertEqual(s, date.today().isoformat())
+        s, e = resolve_preset_dates("this_month")
+        self.assertTrue(s.endswith("-01"))
+        s, e = resolve_preset_dates("bogus")
+        self.assertEqual((s, e), ("", ""))
 
 
 if __name__ == "__main__":

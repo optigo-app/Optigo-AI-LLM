@@ -1,5 +1,5 @@
 {
-  "description": "Order report — job orders with quotation details, weights, amounts, and order status",
+  "description": "Order report \u2014 job orders with quotation details, weights, amounts, and order status",
   "sp": 245,
   "report_id": 22,
   "default_metric": "Amount",
@@ -666,6 +666,25 @@
       "description": "Count of unique designs in orders"
     }
   },
+  "dimension_aliases": {
+    "customer": "Job_customerfirmname",
+    "customer name": "Job_customerfirmname",
+    "customer firm": "Job_customerfirmname",
+    "customer code": "Job_customercode",
+    "design": "Designcode",
+    "sku": "SKUNO",
+    "quotation": "QuotationNo",
+    "quotation no": "QuotationNo",
+    "quote": "QuotationNo",
+    "sales rep": "SalesrepCode",
+    "salesperson": "SalesrepCode",
+    "order type": "orderType",
+    "status": "SoldPending",
+    "order status": "SoldPending",
+    "job flow": "jobflowfrom",
+    "job no": "JobNo",
+    "jobno": "JobNo"
+  },
   "filter_key_map": {
     "customer": "Job_customercode",
     "customercode": "Job_customercode",
@@ -1263,11 +1282,32 @@
     "order type",
     "order quantity",
     "order date",
-    "customer",
-    "company",
-    "sales rep",
-    "design",
-    "sku"
+    "orders by customer",
+    "customer orders",
+    "order total",
+    "order gross weight",
+    "order gross wt",
+    "order net weight",
+    "order net wt",
+    "order pure weight",
+    "order pure wt",
+    "order weight",
+    "order metal amount",
+    "order metal",
+    "order diamond weight",
+    "order diamond",
+    "order colourstone",
+    "order cs weight",
+    "order misc",
+    "order labour",
+    "order total amount",
+    "order pcs",
+    "eta jobs",
+    "eta job",
+    "rem jobs",
+    "remaining jobs",
+    "quote jobs",
+    "quotation jobs"
   ],
   "location_aliases": {},
   "fallback_intent": {
@@ -1284,13 +1324,13 @@
     "unit": "currency"
   },
   "suggested_questions": [
-      "today total orders",
-      "total order amount",
-      "top 5 customers by order amount",
-      "all sales rep list",
-      "order status wise count",
-      "net weight this month",
-      "total diamond amount",
-      "monthly order trend"
+    "today total orders",
+    "total order amount",
+    "top 5 customers by order amount",
+    "all sales rep list",
+    "order status wise count",
+    "net weight this month",
+    "total diamond amount",
+    "monthly order trend"
   ]
 }

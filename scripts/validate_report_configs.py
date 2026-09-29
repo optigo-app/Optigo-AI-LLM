@@ -23,22 +23,29 @@ OPTIONAL_TOP_LEVEL_KEYS = {
     "default_dimension", "metric_catalog", "intents", "canonical_values",
     "report_keywords", "prompt_rules", "location_aliases", "party_type_rules",
     "chat_enabled", "fallback_intent", "name_filter_map", "date_column",
+    "suggested_questions", "table_filters", "source_query_file",
+    "filter_invalid_values", "dimension_aliases",
 }
 OPTIONAL_COLUMN_KEYS = {
     "sql", "type", "desc", "description", "grp", "business_group",
     "unit", "aliases", "filter", "calc", "computed", "me", "metric_expr",
     "de", "dimension_expr", "filter_only", "fo", "not_available",
-    "not_in_where", "computed_only", "label",
+    "not_in_where", "computed_only", "label", "table_metric_exprs",
+    "table_dimension_exprs",
 }
 OPTIONAL_INTENT_KEYS = {
     "patterns", "metric", "metric_key", "aggregation", "dimension", "sort",
-    "limit", "unit", "is_field_metric", "clear_filters", "override_filters",
+    "limit", "unit", "is_field_metric", "override_metric", "clear_filters", "override_filters",
     "state", "state_reason", "label",
 }
 
 # Short keys expanded by app/services/column_registry.py
 SHORT_EXPR_KEYS = {"me", "de"}
 EXPR_KEYS = {"metric_expr", "dimension_expr"} | SHORT_EXPR_KEYS
+_BLOCKED_EXPR_KEYWORDS = re.compile(
+    r"\b(DROP|DELETE|INSERT|UPDATE|EXEC|EXECUTE|XP_CMDSHELL|ALTER|CREATE|GRANT|TRUNCATE|MERGE|OPENROWSET|OPENDATASOURCE)\b",
+    re.IGNORECASE,
+)
 
 
 def _load_json(path: str) -> Tuple[Any, List[str]]:
@@ -78,6 +85,7 @@ def _check_types(report_key: str, cfg: Dict[str, Any]) -> Tuple[List[str], List[
         "date_column": str,
         "tables": list,
         "base_filter": str,
+        "table_filters": dict,
         "columns": dict,
         "special_metrics": dict,
         "filter_key_map": dict,
@@ -90,11 +98,31 @@ def _check_types(report_key: str, cfg: Dict[str, Any]) -> Tuple[List[str], List[
         value = cfg.get(key)
         if value is not None and not isinstance(value, expected_type):
             errors.append(f"'{key}' should be {expected_type.__name__}, got {type(value).__name__}")
+
+    source_query_file = cfg.get("source_query_file")
+    if source_query_file is not None:
+        if not isinstance(source_query_file, str) or not source_query_file.strip():
+            errors.append("'source_query_file' must be a non-empty string")
+        else:
+            sq_path = os.path.join(ROOT, "app", "report_queries", source_query_file)
+            if not os.path.isfile(sq_path):
+                errors.append(f"'source_query_file' not found: {sq_path}")
+
+    table_filters = cfg.get("table_filters")
+    if isinstance(table_filters, dict):
+        unknown_tables = set(table_filters) - set(cfg.get("tables", []))
+        if unknown_tables:
+            errors.append(f"'table_filters' contains unknown tables: {sorted(unknown_tables)}")
+        for table, expression in table_filters.items():
+            if not isinstance(expression, str) or not expression.strip():
+                errors.append(f"'table_filters' entry for '{table}' must be a non-empty string")
+            elif any(token in expression for token in (";", "--", "/*", "*/")) or _BLOCKED_EXPR_KEYWORDS.search(expression):
+                errors.append(f"'table_filters' entry for '{table}' contains blocked SQL tokens")
     return errors, warnings
 
 
 def _has_expression(meta: Dict[str, Any]) -> bool:
-    return any(meta.get(k) for k in EXPR_KEYS)
+    return any(meta.get(k) for k in EXPR_KEYS) or bool(meta.get("table_metric_exprs")) or bool(meta.get("table_dimension_exprs"))
 
 
 def _check_columns(report_key: str, cfg: Dict[str, Any]) -> Tuple[List[str], List[str]]:
@@ -124,6 +152,24 @@ def _check_columns(report_key: str, cfg: Dict[str, Any]) -> Tuple[List[str], Lis
         for flag in ("not_in_where", "computed_only"):
             if flag in meta and not isinstance(meta[flag], bool):
                 errors.append(f"Column '{col_name}' '{flag}' must be boolean")
+        for expr_key in ("table_metric_exprs", "table_dimension_exprs"):
+            table_exprs = meta.get(expr_key)
+            if table_exprs is None:
+                continue
+            if not isinstance(table_exprs, dict) or not table_exprs:
+                errors.append(f"Column '{col_name}' '{expr_key}' must be a non-empty dict")
+                continue
+            unknown_tables = set(table_exprs) - set(cfg.get("tables", []))
+            if unknown_tables:
+                errors.append(f"Column '{col_name}' has {expr_key} for unknown tables: {sorted(unknown_tables)}")
+            missing_tables = set(cfg.get("tables", [])) - set(table_exprs)
+            if missing_tables:
+                errors.append(f"Column '{col_name}' missing {expr_key} for tables: {sorted(missing_tables)}")
+            for table, expression in table_exprs.items():
+                if not isinstance(expression, str) or not expression.strip():
+                    errors.append(f"Column '{col_name}' {expr_key} for '{table}' must be a non-empty string")
+                elif any(token in expression for token in (";", "--", "/*", "*/")) or _BLOCKED_EXPR_KEYWORDS.search(expression):
+                    errors.append(f"Column '{col_name}' {expr_key} for '{table}' contains blocked SQL tokens")
 
     for sm_name, meta in special.items():
         if not isinstance(meta, dict):

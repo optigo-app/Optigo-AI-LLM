@@ -18,7 +18,8 @@ from app.middleware.metrics import (
     LLM_TOKENS, LLM_CALLS, LLM_LATENCY, CACHE_SIZE,
 )
 from app.middleware.prompt_guard import detect_injection, sanitize_question
-from app.middleware.audit_log import log_chat_exchange
+from app.services.spelling import normalize_spelling
+from app.middleware.audit_log import log_chat_exchange, log_request_trace
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import ChatRequest, ChatResponse, ExportResponse, ReportRegistryEntry, FeedbackRequest, FeedbackResponse, AnswerData, ReportInfo, PeriodInfo, Metadata, Actions
 from app.services.answer_generator import generate_answer, _resolve_metric, _record_count
@@ -45,7 +46,7 @@ from app.services.filter_extractor import (
 )
 from app.services import conversation_store, usage_store
 from app.services import feedback_store
-from app.services.context_resolver import resolve_context
+from app.services.context_resolver import ambiguous_entity_value, needs_date_clarification, resolve_context
 from app.services.validator import validate_and_fill
 from app.services.column_registry import get_suggested_questions
 
@@ -413,6 +414,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             session_id=session_id,
         )
     body.question = sanitize_question(body.question)
+    body.question = normalize_spelling(body.question)
 
     # ── Resolve report from pid (frontend sends unique report ID) ──
     # Done before the greeting check so the greeting can be report-scoped.
@@ -453,6 +455,27 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             session_id=session_id,
         )
 
+    if needs_date_clarification(body.question):
+        msg = "Which date range would you like? For example: today, this month, last month, this year, or specific start and end dates."
+        blocks = [block_builder.build_date_range_input_block(msg)] if response_mode == "wide" else None
+        conversation_store.add_message(session_id, "user", body.question)
+        conversation_store.add_message(session_id, "assistant", msg)
+        return ChatResponse(
+            status="clarify", answer=AnswerData(type="text", value=msg),
+            answer_text=msg, session_id=session_id, blocks=blocks,
+        )
+
+    ambiguous_value = ambiguous_entity_value(body.question)
+    if ambiguous_value:
+        msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
+        blocks = [block_builder.build_entity_choice_block(ambiguous_value, msg)] if response_mode == "wide" else None
+        conversation_store.add_message(session_id, "user", body.question)
+        conversation_store.add_message(session_id, "assistant", msg)
+        return ChatResponse(
+            status="clarify", answer=AnswerData(type="text", value=msg),
+            answer_text=msg, session_id=session_id, blocks=blocks,
+        )
+
     token_usage_calls: List[Dict[str, int]] = []
     history = conversation_store.get_messages(session_id, limit=10)
 
@@ -473,6 +496,25 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         body.question, history, token_usage=token_usage_calls,
     )
 
+    # External-market detection: when the question references market/industry
+    # information, the governed pipeline still answers the internal side and we
+    # attach an explicit boundary note (+ curated external snapshot if configured).
+    from app.services.market_context import (
+        build_market_note, detect_market_context, load_market_snapshot,
+    )
+    market_ctx = detect_market_context(resolved_question)
+    market_snapshot = load_market_snapshot(market_ctx["topic"]) if market_ctx else []
+
+    cache_report_name = resolved_report_name
+    if not cache_report_name and len(_REPORT_REGISTRY) > 1:
+        from app.services.intent import classify_question_by_intent
+        cache_report_name = (
+            classify_question_by_intent(resolved_question, _REPORT_REGISTRY)
+            or keyword_classify(resolved_question, _REPORT_REGISTRY)
+            or conversation_store.get_last_report(session_id)
+            or ""
+        )
+
     # Semantic cache check (skip when the caller explicitly asks for an export link,
     # or when the frontend asks for a regenerated/fresh answer).
     # Uses resolved_question so follow-ups get the right cache key, not the raw short input.
@@ -481,7 +523,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
     if _CHAT_CACHE is not None and not body.export and not body.regenerate:
         cached = await _CHAT_CACHE.lookup(
             resolved_question, company_code, user_id, response_mode,
-            report_key=resolved_report_name or None,
+            report_key=cache_report_name or None,
         )
         if cached:
             CACHE_HITS.inc()
@@ -494,44 +536,35 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 session_id=session_id,
                 latency_ms=round((time.time() - start) * 1000, 1),
             )
+            log_request_trace(
+                request_id=getattr(request.state, "request_id", ""),
+                intent=cached.report_key or "", confidence=(cached.metadata.intent_confidence if cached.metadata else 0.0) or 0.0,
+                result_count=(cached.metadata.record_count if cached.metadata else 0), cache_hit=True,
+            )
             return cached
     CACHE_MISSES.inc()
 
-    # Scope the semantic catalog to a single report when possible. If the
-    # frontend did not send report_name, use the fast keyword classifier to
-    # pick the best report. This keeps the LLM prompt small as the number of
-    # reports grows into the hundreds.
-    semantic_report_name = resolved_report_name
-    if not semantic_report_name and len(_REPORT_REGISTRY) > 1:
-        # Stage 0: deterministic intent patterns (before keyword classifier)
-        from app.services.intent import classify_question_by_intent
-        intent_report = classify_question_by_intent(resolved_question, _REPORT_REGISTRY)
-        if intent_report:
-            semantic_report_name = intent_report
-            logger.info("Intent classifier scoped semantic parser to: %s", semantic_report_name)
-        else:
-            semantic_report_name = keyword_classify(resolved_question, _REPORT_REGISTRY) or ""
-            if semantic_report_name:
-                logger.info("Keyword classifier scoped semantic parser to: %s", semantic_report_name)
-
-    from app.services.semantic_query_parser import parse_query
-    parsed = await parse_query(
-        resolved_question, history=history, token_usage=token_usage_calls,
-        report_name=semantic_report_name,
-    )
+    from app.services.query_planner import plan_query
+    last_intent = conversation_store.get_last_intent(session_id)
+    try:
+        planning = await plan_query(
+            resolved_question, history=history, token_usage=token_usage_calls,
+            report_name=resolved_report_name,
+            previous_filters=conversation_store.get_last_filters(session_id) or {},
+            registry=_REPORT_REGISTRY,
+            fallback_report=last_intent.get("report_key", ""),
+        )
+    except ValueError as exc:
+        logger.warning("Query planning failed: %s", exc)
+        msg = "I couldn't safely validate that query. Please specify the report and metric."
+        return ChatResponse(error=msg, session_id=session_id)
+    parsed = planning.parsed
     report_key = parsed.report_key
-
-    # Fallback: if parser returned empty report but we have a last known
-    # report from session context (follow-up scenario), use it.
-    if not report_key or not report_key.strip():
-        last_intent = conversation_store.get_last_intent(session_id)
-        fallback_report = last_intent.get("report_key", "")
-        if fallback_report and fallback_report in _REPORT_REGISTRY:
-            logger.info(
-                "Parser returned empty report, falling back to last: %s",
-                fallback_report,
-            )
-            report_key = fallback_report
+    query_plan = planning.plan
+    intent_spec = planning.intent_spec
+    validated_filters = planning.validated_filters
+    ai_where = planning.ai_where
+    routing_source = planning.routing_source
 
     entry = _REPORT_REGISTRY.get(report_key)
     if entry is None:
@@ -564,6 +597,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         # Store in conversation history so follow-up questions have context
         conversation_store.add_message(session_id, "user", resolved_question)
         conversation_store.add_message(session_id, "assistant", clarify_msg)
+        log_request_trace(
+            request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+            confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            failure_stage="clarification",
+        )
         if response_mode == "wide":
             from app.services.block_builder import build_clarify_blocks
             blocks = build_clarify_blocks(report_key)
@@ -584,40 +622,24 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             session_id=session_id,
         )
 
-    intent_spec = parsed.to_intent_spec()
-
-    # Deterministic intent override: if an explicit regex intent matched a
-    # different metric than the LLM chose, prefer the deterministic one (e.g.
-    # "total order" → order_count/total_count, not order_total_amount/Amount).
-    # Only explicit regex intents may override — the keyword/column-name
-    # fallbacks in detect_intent are weaker than the LLM and clobbered valid
-    # metrics (e.g. "total wastage" → fallback 'total' → Amount).
-    from app.services.intent import _detect_explicit_intent
     from app.services.column_registry import _load_registry as _load_col_reg
-    det_spec = _detect_explicit_intent(resolved_question, report_key)
-    # Trust the LLM whenever it picked a non-default metric — generic regex
-    # intents like total_sales must not clobber a specific LLM choice
-    # (DiamondAmount/ColorStoneAmount/GoldPureWt/etc.). The deterministic
-    # override only refines the metric when the LLM fell back to the default.
     _rcfg = _load_col_reg().get(report_key, {})
-    _default_metric = _rcfg.get("default_metric", "Amount")
-    _llm_metric_is_default = intent_spec.metric_key == _default_metric
-    if (det_spec is not None and det_spec.metric_key
-            and det_spec.metric_key != intent_spec.metric_key
-            and _llm_metric_is_default):
-        logger.info(
-            "Deterministic intent override: %s → %s (was %s → %s)",
-            det_spec.intent, det_spec.metric_key,
-            intent_spec.intent, intent_spec.metric_key,
+    # A structurally complete ranking parse (metric + dimension) is safe to
+    # execute even when the LLM under-reports confidence — e.g. "least/worst"
+    # questions reliably parse to sort=asc but score below the gate.
+    _complete_ranking = bool(parsed.metric and parsed.dimension)
+    if query_plan.confidence < 0.75 and not resolved_report_name and not market_ctx and not _complete_ranking:
+        msg = "I’m not confident which report or metric you mean. Please specify the report and metric."
+        log_request_trace(
+            request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+            confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            failure_stage="low_confidence",
         )
-        intent_spec.metric_key = det_spec.metric_key
-        intent_spec.aggregation = det_spec.aggregation or intent_spec.aggregation
-        intent_spec.unit = det_spec.unit or intent_spec.unit
-        intent_spec.unit_label = getattr(det_spec, "unit_label", "")
-        if det_spec.dimension:
-            intent_spec.dimension = det_spec.dimension
-            intent_spec.sort = det_spec.sort or intent_spec.sort
-            intent_spec.limit = det_spec.limit or intent_spec.limit
+        return ChatResponse(
+            status="clarify", report_key=report_key,
+            answer=AnswerData(type="text", value=msg), answer_text=msg,
+            session_id=session_id, blocks=[{"type": "clarify", "content": msg}],
+        )
 
     # If the LLM requested a dimension that was dropped (filter-only / not a
     # real groupable column e.g. SalesRep, CustomerType), clarify instead of
@@ -635,6 +657,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         )
         conversation_store.add_message(session_id, "user", resolved_question)
         conversation_store.add_message(session_id, "assistant", clarify_msg)
+        log_request_trace(
+            request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+            confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            failure_stage="clarification",
+        )
         if response_mode == "wide":
             return ChatResponse(
                 report_key=report_key,
@@ -649,25 +676,6 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             answer_text=clarify_msg,
             session_id=session_id,
         )
-
-    validated_filters = parsed.to_validated_filters()
-    ai_where = parsed.generate_where_clause()
-
-    # Follow-up context: if this question didn't specify a date range, inherit
-    # the previous turn's date filter so "which month had highest?" stays scoped
-    # to the period the user was already asking about (not all-time).
-    if not getattr(parsed, "date_filter", None) and not (
-        validated_filters.get("start_date") or validated_filters.get("end_date")
-    ):
-        prev_filters = conversation_store.get_last_filters(session_id) or {}
-        for dk in ("start_date", "end_date"):
-            if prev_filters.get(dk):
-                validated_filters[dk] = prev_filters[dk]
-        if prev_filters.get("start_date") or prev_filters.get("end_date"):
-            logger.info(
-                "Inherited previous date filter for follow-up: %s to %s",
-                prev_filters.get("start_date"), prev_filters.get("end_date"),
-            )
 
     if validated_filters:
         conversation_store.set_last_filters(session_id, validated_filters)
@@ -712,6 +720,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 _REPORT_REGISTRY,
             )
     except ReportApiError as exc:
+        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.error("Report API error: status=%s body=%s", exc.status_code, exc.body[:300])
         msg = "Unable to fetch report data. Please try again."
         if response_mode == "wide":
@@ -719,6 +728,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 blocks=[{"type": "error", "content": msg}])
         return ChatResponse(report_key=report_key, error=msg)
     except RealApiError as exc:
+        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.error("Real API error: status=%s body=%s", exc.status_code, exc.body[:300])
         msg = "Unable to fetch report data. Please try again."
         if response_mode == "wide":
@@ -726,12 +736,18 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 blocks=[{"type": "error", "content": msg}])
         return ChatResponse(report_key=report_key, error=msg)
     except Exception as exc:
+        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.exception("Report API call failed: %s", exc)
         msg = "Unable to reach the report service. Please try again."
         if response_mode == "wide":
             return ChatResponse(report_key=report_key, error=msg,
                 blocks=[{"type": "error", "content": msg}])
         return ChatResponse(report_key=report_key, error=msg)
+
+    if isinstance(data, dict) and isinstance(data.get("rows"), list):
+        returned_count = len(data["rows"])
+        total_count = int(data.get("total_count", returned_count) or returned_count)
+        query_plan.results_limited = query_plan.results_limited or total_count > returned_count
 
     # 7. Large-result handling -- handled by the answer generator (caps rows sent to the LLM).
     # 8. Answer generation via deterministic pipeline
@@ -754,8 +770,21 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         elif ed:
             assumptions.append(f"Up to {ed}")
 
+    # ── Period wording detection (shared by multi-period & comparison paths) ──
+    _q_lower = body.question.lower()
+    _is_growth_query = any(kw in _q_lower for kw in (
+        "growth", "compared", "compare", "previous period", "vs last", "versus last",
+    ))
+    from app.services.orchestrator import detect_periods, is_time_dimension
+    _period_mentions = (
+        detect_periods(resolved_question)
+        if not _is_growth_query
+           and (not parsed.dimension or is_time_dimension(parsed.dimension))
+        else []
+    )
+
     # ── Multi-metric support: fetch extra metrics via additional SP calls ──
-    if parsed.extra_metrics and not parsed.dimension:
+    if parsed.extra_metrics and not parsed.dimension and len(_period_mentions) < 2:
         from app.services.semantic_query_parser import get_metric_unit, get_metric_unit_label
 
         # Build ordered results list: primary metric first, then extras
@@ -771,46 +800,45 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             "label": primary_resolved.label,
         })
 
-        # Fetch each extra metric via additional SP call
-        for extra_metric in parsed.extra_metrics:
+        from app.services.orchestrator import execute_plan
+        from app.services.query_plan import QueryStep
+        query_plan.steps = [QueryStep(type="metric_fetch", metric=metric) for metric in parsed.extra_metrics]
+
+        async def _fetch_metric_step(step):
             extra_spec = parsed.to_intent_spec()
-            extra_spec.metric_key = extra_metric
-            extra_spec.intent = f"semantic_{extra_metric}"
-            extra_spec.unit = get_metric_unit(extra_metric)
-            extra_spec.unit_label = get_metric_unit_label(extra_metric, report_key)
-            try:
-                if settings.use_real_api:
-                    extra_data = await call_real_report_api(
-                        report_key=report_key,
-                        intent_spec=extra_spec,
-                        validated_filters=validated_filters,
-                        appuserid=appuserid,
-                        ip_address=ip_address,
-                        yearcode=yearcode,
-                        sp_number=sp_number,
-                        ai_where_clause=ai_where,
-                    )
-                else:
-                    extra_data = await call_report_api(
-                        report_key, validated_filters, company_code, user_id, _REPORT_REGISTRY,
-                    )
-                extra_resolved = _resolve_metric(extra_data, extra_spec, body.question)
+            extra_spec.metric_key = step.metric
+            extra_spec.intent = f"semantic_{step.metric}"
+            extra_spec.unit = get_metric_unit(step.metric)
+            extra_spec.unit_label = get_metric_unit_label(step.metric, report_key)
+            if settings.use_real_api:
+                extra_data = await call_real_report_api(
+                    report_key=report_key, intent_spec=extra_spec,
+                    validated_filters=validated_filters, appuserid=appuserid,
+                    ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                    ai_where_clause=ai_where,
+                )
+            else:
+                extra_data = await call_report_api(
+                    report_key, validated_filters, company_code, user_id, _REPORT_REGISTRY,
+                )
+            resolved = _resolve_metric(extra_data, extra_spec, body.question)
+            return {
+                "metric_key": step.metric, "value": resolved.value,
+                "unit": extra_spec.unit, "unit_label": getattr(extra_spec, "unit_label", ""),
+                "label": resolved.label,
+            }
+
+        for outcome in await execute_plan(query_plan, _fetch_metric_step):
+            if outcome.error:
+                logger.warning("Failed to fetch extra metric %s: %s", outcome.step.metric, outcome.error)
                 metric_results.append({
-                    "metric_key": extra_metric,
-                    "value": extra_resolved.value,
-                    "unit": extra_spec.unit,
-                    "unit_label": getattr(extra_spec, "unit_label", ""),
-                    "label": extra_resolved.label,
+                    "metric_key": outcome.step.metric, "value": None,
+                    "unit": get_metric_unit(outcome.step.metric),
+                    "unit_label": get_metric_unit_label(outcome.step.metric, report_key),
+                    "label": outcome.step.metric,
                 })
-            except Exception as exc:
-                logger.warning("Failed to fetch extra metric %s: %s", extra_metric, exc)
-                metric_results.append({
-                    "metric_key": extra_metric,
-                    "value": None,
-                    "unit": extra_spec.unit,
-                    "unit_label": getattr(extra_spec, "unit_label", ""),
-                    "label": extra_metric,
-                })
+            else:
+                metric_results.append(outcome.data)
 
         record_count = _record_count(data)
         source_report = report_key.replace("_", " ").title()
@@ -847,6 +875,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             filters=validated_filters,
             session_id=session_id,
             blocks=blocks,
+            metadata=Metadata(
+                session_id=session_id, request_id=getattr(request.state, "request_id", None),
+                record_count=record_count, intent_confidence=query_plan.confidence,
+                complexity=query_plan.complexity.value, results_limited=query_plan.results_limited,
+            ),
         )
 
         # Cache the multi-metric response
@@ -869,86 +902,55 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             session_id=session_id,
             latency_ms=round((time.time() - start) * 1000, 1),
         )
+        log_request_trace(
+            request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+            confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            result_count=record_count, cache_hit=False,
+        )
         return response
 
     # ── Growth/comparison support: detect "growth %" or "compared with previous" ──
-    _q_lower = body.question.lower()
-    _is_growth_query = any(kw in _q_lower for kw in (
-        "growth", "compared", "compare", "previous period", "vs last", "versus last",
-    ))
     if _is_growth_query and not parsed.dimension:
-        from datetime import date, timedelta
-        from app.services.formatters import format_currency, format_percentage
+        from app.services.formatters import format_percentage
+        from app.services.orchestrator import compute_previous_period
 
-        # If no date_filter was set, default to this_month for growth comparison
-        if not validated_filters.get("start_date"):
-            today = date.today()
-            validated_filters["start_date"] = today.replace(day=1).isoformat()
-            validated_filters["end_date"] = today.isoformat()
-            assumptions.append(f"Date range {validated_filters['start_date']} to {validated_filters['end_date']}")
-
-        cur_start = validated_filters.get("start_date", "")
-        cur_end = validated_filters.get("end_date", "")
-        prev_filters = dict(validated_filters)
-
-        # Compute previous period based on preset or explicit range
-        preset = (parsed.date_filter or {}).get("preset", "")
-        if not preset and not (parsed.date_filter or {}).get("start"):
-            # No explicit date_filter — we defaulted to this_month above
-            preset = "this_month"
-        if preset == "this_month":
-            today = date.today()
-            first_of_month = today.replace(day=1)
-            prev_end = first_of_month - timedelta(days=1)
-            prev_start = prev_end.replace(day=1)
-            prev_filters["start_date"] = prev_start.isoformat()
-            prev_filters["end_date"] = prev_end.isoformat()
-        elif preset == "this_year":
-            today = date.today()
-            prev_filters["start_date"] = f"{today.year - 1}-01-01"
-            prev_filters["end_date"] = f"{today.year - 1}-12-31"
-        elif preset == "this_week":
-            today = date.today()
-            monday = today - timedelta(days=today.weekday())
-            prev_monday = monday - timedelta(days=7)
-            prev_sunday = prev_monday + timedelta(days=6)
-            prev_filters["start_date"] = prev_monday.isoformat()
-            prev_filters["end_date"] = prev_sunday.isoformat()
-        elif preset == "today":
-            today = date.today()
-            yesterday = today - timedelta(days=1)
-            prev_filters["start_date"] = yesterday.isoformat()
-            prev_filters["end_date"] = yesterday.isoformat()
-        elif cur_start and cur_end:
-            # Explicit range: shift by the range duration
-            from datetime import date as _date
-            s = _date.fromisoformat(cur_start)
-            e = _date.fromisoformat(cur_end)
-            duration = (e - s).days + 1
-            prev_end = s - timedelta(days=1)
-            prev_start = prev_end - timedelta(days=duration - 1)
-            prev_filters["start_date"] = prev_start.isoformat()
-            prev_filters["end_date"] = prev_end.isoformat()
-        else:
+        prev_result = compute_previous_period(validated_filters, parsed.date_filter)
+        if prev_result is None:
             _is_growth_query = False  # can't compute without a date range
+        else:
+            prev_filters, cur_start, cur_end = prev_result
+            if not validated_filters.get("start_date") and cur_start:
+                validated_filters["start_date"] = cur_start
+                validated_filters["end_date"] = cur_end
+                assumptions.append(f"Date range {cur_start} to {cur_end}")
 
         if _is_growth_query:
             try:
-                if settings.use_real_api:
-                    prev_data = await call_real_report_api(
-                        report_key=report_key,
-                        intent_spec=intent_spec,
-                        validated_filters=prev_filters,
-                        appuserid=appuserid,
-                        ip_address=ip_address,
-                        yearcode=yearcode,
-                        sp_number=sp_number,
-                        ai_where_clause=ai_where,
+                from app.services.orchestrator import execute_plan
+                from app.services.query_plan import DateRange, QueryStep
+                query_plan.steps = [QueryStep(
+                    type="period_comparison", metric=query_plan.metric,
+                    date_range=DateRange(start=prev_filters["start_date"], end=prev_filters["end_date"]),
+                )]
+
+                async def _fetch_period_step(step):
+                    step_filters = dict(validated_filters)
+                    step_filters.update(step.date_range.resolved())
+                    if settings.use_real_api:
+                        return await call_real_report_api(
+                            report_key=report_key, intent_spec=intent_spec,
+                            validated_filters=step_filters, appuserid=appuserid,
+                            ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                            ai_where_clause=ai_where,
+                        )
+                    return await call_report_api(
+                        report_key, step_filters, company_code, user_id, _REPORT_REGISTRY,
                     )
-                else:
-                    prev_data = await call_report_api(
-                        report_key, prev_filters, company_code, user_id, _REPORT_REGISTRY,
-                    )
+
+                period_results = await execute_plan(query_plan, _fetch_period_step)
+                if period_results[0].error:
+                    raise RuntimeError(period_results[0].error)
+                prev_data = period_results[0].data
                 current_val = _resolve_metric(data, intent_spec, body.question)
                 prev_val = _resolve_metric(prev_data, intent_spec, body.question)
                 cur_v = current_val.value if current_val.value else 0
@@ -966,13 +968,16 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     f"Previous period: {prev_filters['start_date']} to {prev_filters['end_date']}"
                 )
 
+                from app.services.block_builder import _display_value
+                _u = getattr(intent_spec, "unit", "currency") or "currency"
+                _ul = getattr(intent_spec, "unit_label", "") or ""
                 if response_mode == "wide":
                     blocks = [
                         {"type": "heading", "content": body.question},
                         {"type": "table", "columns": ["Period", "Value", "Growth %"],
                          "rows": [
-                            ["Current", format_currency(cur_v), ""],
-                            ["Previous", format_currency(prev_v), ""],
+                            ["Current", _display_value(cur_v, _u, "INR", _ul), ""],
+                            ["Previous", _display_value(prev_v, _u, "INR", _ul), ""],
                             ["Growth", "", format_percentage(growth_pct) if growth_pct is not None else "N/A"],
                          ]},
                         {"type": "text", "content": f"Transactions: {record_count}"},
@@ -983,8 +988,8 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     answer_text = block_builder.blocks_to_text(blocks)
                 else:
                     lines = [
-                        f"Current period: {format_currency(cur_v)}",
-                        f"Previous period: {format_currency(prev_v)}",
+                        f"Current period: {_display_value(cur_v, _u, 'INR', _ul)}",
+                        f"Previous period: {_display_value(prev_v, _u, 'INR', _ul)}",
                     ]
                     if growth_pct is not None:
                         lines.append(f"Growth: {format_percentage(growth_pct)}")
@@ -1004,6 +1009,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     assumptions=growth_assumptions,
                     session_id=session_id,
                     blocks=blocks,
+                    metadata=Metadata(
+                        session_id=session_id, request_id=getattr(request.state, "request_id", None),
+                        record_count=record_count, intent_confidence=query_plan.confidence,
+                        complexity=query_plan.complexity.value, results_limited=query_plan.results_limited,
+                    ),
                 )
                 if _CHAT_CACHE is not None and not body.export:
                     await _CHAT_CACHE.store(
@@ -1021,9 +1031,112 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     session_id=session_id,
                     latency_ms=round((time.time() - start) * 1000, 1),
                 )
+                log_request_trace(
+                    request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+                    confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+                    result_count=record_count, cache_hit=False,
+                )
                 return response
             except Exception as exc:
                 logger.warning("Growth comparison failed: %s", exc)
+                assumptions.append("Previous-period comparison was unavailable; showing the current period only")
+
+    # ── Multi-period support: "gross wt for this year, this month and today" ──
+    # When a question names 2+ distinct periods (and is not a growth/comparison
+    # question), fetch each period and present them side by side.
+    if len(_period_mentions) >= 2:
+        from app.services.orchestrator import resolve_preset_dates, period_label
+        try:
+                from dataclasses import replace as _dc_replace
+                period_spec = _dc_replace(intent_spec, dimension="")
+                record_count = _record_count(data)
+                period_rows = []
+                for preset in _period_mentions:
+                    p_start, p_end = resolve_preset_dates(preset)
+                    if not p_start:
+                        continue
+                    step_filters = dict(validated_filters)
+                    step_filters["start_date"] = p_start
+                    step_filters["end_date"] = p_end
+                    if settings.use_real_api:
+                        pdata = await call_real_report_api(
+                            report_key=report_key, intent_spec=period_spec,
+                            validated_filters=step_filters, appuserid=appuserid,
+                            ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                            ai_where_clause=ai_where,
+                        )
+                    else:
+                        pdata = await call_report_api(
+                            report_key, step_filters, company_code, user_id, _REPORT_REGISTRY,
+                        )
+                    p_resolved = _resolve_metric(pdata, period_spec, body.question)
+                    period_rows.append((period_label(preset), p_resolved.value, _record_count(pdata)))
+
+                if len(period_rows) >= 2:
+                    from app.services.block_builder import _display_value
+                    _u = getattr(intent_spec, "unit", "currency") or "currency"
+                    _ul = getattr(intent_spec, "unit_label", "") or ""
+                    metric_label = getattr(intent_spec, "label", "") or parsed.metric
+                    src = report_key.replace("_", " ").title()
+
+                    if response_mode == "wide":
+                        blocks = [
+                            {"type": "heading", "content": body.question},
+                            {"type": "table", "columns": ["Period", metric_label, "Rows"],
+                             "rows": [[lbl, _display_value(v or 0, _u, "INR", _ul), str(rc)]
+                                      for lbl, v, rc in period_rows]},
+                            {"type": "text", "content": f"Sources: {src}"},
+                        ]
+                        for a in assumptions:
+                            blocks.append({"type": "assumption", "content": a})
+                        answer_text = block_builder.blocks_to_text(blocks)
+                    else:
+                        lines = [
+                            f"{lbl}: {_display_value(v or 0, _u, 'INR', _ul)} ({rc} transactions)"
+                            for lbl, v, rc in period_rows
+                        ]
+                        lines.append(f"Sources: {src}")
+                        answer_text = "\n".join(lines)
+                        blocks = None
+
+                    response = ChatResponse(
+                        report_key=report_key,
+                        answer=AnswerData(type="text", value=answer_text or ""),
+                        answer_text=answer_text,
+                        filters=validated_filters,
+                        assumptions=assumptions,
+                        session_id=session_id,
+                        blocks=blocks,
+                        metadata=Metadata(
+                            session_id=session_id, request_id=getattr(request.state, "request_id", None),
+                            record_count=record_count, intent_confidence=query_plan.confidence,
+                            complexity=query_plan.complexity.value, results_limited=query_plan.results_limited,
+                        ),
+                    )
+                    if _CHAT_CACHE is not None and not body.export:
+                        await _CHAT_CACHE.store(
+                            resolved_question, company_code, user_id, response, response_mode,
+                            report_key=report_key,
+                        )
+                    conversation_store.add_message(session_id, "user", resolved_question)
+                    conversation_store.add_message(session_id, "assistant", answer_text or "")
+                    log_chat_exchange(
+                        question=resolved_question,
+                        answer=answer_text or "",
+                        report_key=report_key,
+                        filters=validated_filters,
+                        session_id=session_id,
+                        latency_ms=round((time.time() - start) * 1000, 1),
+                    )
+                    log_request_trace(
+                        request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+                        confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+                        result_count=record_count, cache_hit=False,
+                    )
+                    return response
+        except Exception as exc:
+            logger.warning("Multi-period query failed: %s", exc)
+            # fall through to normal single-period answer
 
     try:
         answer = await generate_answer(
@@ -1037,6 +1150,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             response_mode=response_mode,
         )
     except Exception as exc:
+        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), result_count=_record_count(data), failure_stage="answer_generation")
         LLM_CALLS.labels(provider="unknown", tier="cheap", status="error").inc()
         logger.exception("Answer generation failed: %s", exc)
         msg = "Something went wrong generating this response. Please try again."
@@ -1081,6 +1195,26 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         blocks = answer
         answer_text = block_builder.blocks_to_text(blocks)
 
+    # Market-context note: honest boundary between external market info and
+    # internal ERP facts. External claims (when a curated snapshot exists) are
+    # always attributed with source + retrieval date.
+    if market_ctx:
+        market_note = build_market_note(market_ctx, market_snapshot)
+        answer_text = f"{market_note}\n\n{answer_text}" if answer_text else market_note
+        market_block = {
+            "type": "market_context",
+            "note": market_note,
+            "sources": [
+                {
+                    "name": e.get("source_name"),
+                    "url": e.get("source_url"),
+                    "retrieved_at": e.get("retrieved_at"),
+                }
+                for e in market_snapshot
+            ],
+        }
+        blocks = (blocks or []) + [market_block]
+
     # Build structured response for frontend
     report_name = report_key.replace("_", " ").title() if report_key else ""
     record_count = _record_count(data) if 'data' in dir() else 0
@@ -1101,6 +1235,10 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     subtext=b.get("subtext", ""),
                 )
                 break
+    # Normal mode has no blocks — carry the text answer in the modern `answer`
+    # field (legacy `answer_text` is excluded from the API response).
+    if answer_data is None and answer_text:
+        answer_data = AnswerData(type="text", value=answer_text)
 
     # Build period info from filters
     period_info = None
@@ -1131,7 +1269,15 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         period=period_info,
         blocks=blocks,
         filters=validated_filters,
-        metadata=Metadata(session_id=session_id, record_count=record_count, token_usage=token_usage),
+        metadata=Metadata(
+            session_id=session_id,
+            request_id=getattr(request.state, "request_id", None),
+            record_count=record_count,
+            token_usage=token_usage,
+            intent_confidence=query_plan.confidence,
+            complexity=query_plan.complexity.value,
+            results_limited=query_plan.results_limited,
+        ),
         actions=Actions(download_url=download_url),
         # Legacy fields for backward compatibility
         report_key=report_key,
@@ -1180,6 +1326,14 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         latency_ms=round((time.time() - answer_start) * 1000, 1),
     )
 
+    log_request_trace(
+        request_id=getattr(request.state, "request_id", ""),
+        intent=query_plan.intent,
+        confidence=query_plan.confidence,
+        query_plan=query_plan.model_dump(mode="json"),
+        result_count=record_count,
+        cache_hit=False,
+    )
     return response
 
 
@@ -1217,6 +1371,7 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         return StreamingResponse(_blocked(), media_type="text/event-stream")
 
     body.question = sanitize_question(body.question)
+    body.question = normalize_spelling(body.question)
 
     # Resolve report for a report-scoped greeting
     stream_report_name = body.report_name or ""
@@ -1237,6 +1392,23 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
             yield f'data: {_json.dumps({"done": True})}\n\n'
         return StreamingResponse(_out_of_scope(), media_type="text/event-stream")
 
+    if needs_date_clarification(body.question):
+        async def _date_clarification():
+            import json as _json
+            msg = "Which date range would you like? For example: today, this month, last month, this year, or specific start and end dates."
+            block = block_builder.build_date_range_input_block(msg)
+            yield f'data: {_json.dumps({"status": "clarify", "answer": msg, "blocks": [block], "done": True})}\n\n'
+        return StreamingResponse(_date_clarification(), media_type="text/event-stream")
+
+    ambiguous_value = ambiguous_entity_value(body.question)
+    if ambiguous_value:
+        async def _entity_clarification():
+            import json as _json
+            msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
+            block = block_builder.build_entity_choice_block(ambiguous_value, msg)
+            yield f'data: {_json.dumps({"status": "clarify", "answer": msg, "blocks": [block], "done": True})}\n\n'
+        return StreamingResponse(_entity_clarification(), media_type="text/event-stream")
+
     async def _stream():
         import json as _json
         from app.services.answer_generator import generate_answer
@@ -1256,41 +1428,47 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
             body.question, history, token_usage=token_usage_calls,
         )
 
-        from app.services.semantic_query_parser import parse_query
-        parsed = await parse_query(
-            resolved_question, history=history, token_usage=token_usage_calls,
-            report_name=body.report_name or "",
+        from app.services.market_context import (
+            build_market_note, detect_market_context, load_market_snapshot,
         )
+        market_ctx = detect_market_context(resolved_question)
+        market_snapshot = load_market_snapshot(market_ctx["topic"]) if market_ctx else []
+
+        from app.services.query_planner import plan_query
+        last_intent = conversation_store.get_last_intent(session_id)
+        try:
+            planning = await plan_query(
+                resolved_question, history=history, token_usage=token_usage_calls,
+                report_name=stream_report_name,
+                previous_filters=conversation_store.get_last_filters(session_id) or {},
+                registry=_REPORT_REGISTRY,
+                fallback_report=last_intent.get("report_key", ""),
+            )
+        except ValueError as exc:
+            logger.warning("Stream query planning failed: %s", exc)
+            yield f'data: {_json.dumps({"error": "Unable to validate that query safely."})}\n\n'
+            return
+        parsed = planning.parsed
         report_key = parsed.report_key
-
-        # Fallback: if parser returned empty report but we have a last known
-        # report from session context (follow-up scenario), use it.
-        if not report_key or not report_key.strip():
-            last_intent = conversation_store.get_last_intent(session_id)
-            fallback_report = last_intent.get("report_key", "")
-            if fallback_report and fallback_report in _REPORT_REGISTRY:
-                logger.info(
-                    "Parser returned empty report, falling back to last: %s",
-                    fallback_report,
-                )
-                report_key = fallback_report
-
+        query_plan = planning.plan
+        intent_spec = planning.intent_spec
+        validated_filters = planning.validated_filters
+        ai_where = planning.ai_where
         entry = _REPORT_REGISTRY.get(report_key)
         if entry is None:
             yield f'data: {_json.dumps({"error": f"Unknown report: {report_key}"})}\n\n'
             return
+        _complete_ranking = bool(parsed.metric and parsed.dimension)
+        if parsed.clarify or (query_plan.confidence < 0.75 and not stream_report_name and not market_ctx and not _complete_ranking):
+            message = parsed.clarify or "I’m not confident which report or metric you mean. Please specify the report and metric."
+            log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="clarification")
+            yield f'data: {_json.dumps({"status": "clarify", "report_key": report_key, "answer": message, "done": True})}\n\n'
+            return
         conversation_store.set_last_report(session_id, report_key)
         conversation_store.set_last_intent(
-            session_id,
-            report_key=report_key,
-            metric=parsed.metric,
-            dimension=parsed.dimension or "",
-            resolved_question=resolved_question,
+            session_id, report_key=report_key, metric=parsed.metric,
+            dimension=parsed.dimension or "", resolved_question=resolved_question,
         )
-
-        intent_spec = parsed.to_intent_spec()
-        validated_filters = parsed.to_validated_filters()
-        ai_where = parsed.generate_where_clause()
 
         if validated_filters:
             conversation_store.set_last_filters(session_id, validated_filters)
@@ -1328,12 +1506,130 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                     report_key, validated_filters, company_code, user_id, _REPORT_REGISTRY,
                 )
         except Exception as exc:
+            log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
             logger.exception("Stream: report API call failed: %s", exc)
             yield f'data: {_json.dumps({"error": "Unable to fetch report data. Please try again."})}\n\n'
             return
 
+        record_count = _record_count(data)
+        returned_count = len(data.get("rows", [])) if isinstance(data, dict) and isinstance(data.get("rows"), list) else record_count
+        query_plan.results_limited = query_plan.results_limited or record_count > returned_count
         # Send metadata
-        yield f'data: {_json.dumps({"report_key": report_key, "filters": validated_filters})}\n\n'
+        yield f'data: {_json.dumps({"report_key": report_key, "filters": validated_filters, "request_id": getattr(request.state, "request_id", ""), "intent_confidence": query_plan.confidence, "complexity": query_plan.complexity.value, "record_count": record_count, "results_limited": query_plan.results_limited})}\n\n'
+
+        # Growth/comparison support: fetch previous period and emit delta answer
+        _sq_lower = resolved_question.lower()
+        _is_growth = any(kw in _sq_lower for kw in (
+            "growth", "compared", "compare", "previous period", "vs last", "versus last",
+        ))
+        if _is_growth and not parsed.dimension:
+            try:
+                from app.services.formatters import format_percentage
+                from app.services.orchestrator import compute_previous_period
+                from app.services.block_builder import _display_value
+
+                prev_result = compute_previous_period(validated_filters, parsed.date_filter)
+                if prev_result is None:
+                    raise ValueError("no computable previous period")
+                prev_filters, cur_start, cur_end = prev_result
+                if not validated_filters.get("start_date") and cur_start:
+                    validated_filters["start_date"] = cur_start
+                    validated_filters["end_date"] = cur_end
+
+                if settings.use_real_api:
+                    prev_data = await call_real_report_api(
+                        report_key=report_key, intent_spec=intent_spec,
+                        validated_filters=prev_filters, appuserid=appuserid,
+                        ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                        ai_where_clause=ai_where,
+                    )
+                else:
+                    prev_data = await call_report_api(
+                        report_key, prev_filters, company_code, user_id, _REPORT_REGISTRY,
+                    )
+
+                cur_v = (_resolve_metric(data, intent_spec, body.question).value or 0)
+                prev_v = (_resolve_metric(prev_data, intent_spec, body.question).value or 0)
+                growth_pct = ((cur_v - prev_v) / abs(prev_v)) * 100 if prev_v else None
+                _u = getattr(intent_spec, "unit", "currency") or "currency"
+                _ul = getattr(intent_spec, "unit_label", "") or ""
+
+                lines = [
+                    f"Current period: {_display_value(cur_v, _u, 'INR', _ul)}",
+                    f"Previous period: {_display_value(prev_v, _u, 'INR', _ul)}",
+                    f"Growth: {format_percentage(growth_pct)}" if growth_pct is not None
+                    else "Growth: N/A (previous period was zero)",
+                    f"Previous period range: {prev_filters['start_date']} to {prev_filters['end_date']}",
+                    f"Transactions: {record_count}",
+                    f"Sources: {report_key.replace('_', ' ').title()}",
+                ]
+                answer = "\n".join(lines)
+                if market_ctx:
+                    answer = f"{build_market_note(market_ctx, market_snapshot)}\n\n{answer}"
+                chunk_size = 3
+                for i in range(0, len(answer), chunk_size):
+                    yield f'data: {_json.dumps({"chunk": answer[i:i + chunk_size]})}\n\n'
+                yield f'data: {_json.dumps({"done": True})}\n\n'
+                conversation_store.add_message(session_id, "user", resolved_question)
+                conversation_store.add_message(session_id, "assistant", answer)
+                return
+            except Exception as exc:
+                logger.warning("Stream growth comparison failed: %s", exc)
+                # fall through to normal single-period answer
+
+        # Multi-period support: questions naming 2+ distinct periods
+        if not _is_growth and (not parsed.dimension or is_time_dimension(parsed.dimension)):
+            from app.services.orchestrator import (
+                detect_periods, is_time_dimension, resolve_preset_dates, period_label,
+            )
+            _period_mentions = detect_periods(resolved_question)
+            if len(_period_mentions) >= 2:
+                try:
+                    from app.services.block_builder import _display_value
+                    from dataclasses import replace as _dc_replace
+                    period_spec = _dc_replace(intent_spec, dimension="")
+                    period_rows = []
+                    for preset in _period_mentions:
+                        p_start, p_end = resolve_preset_dates(preset)
+                        if not p_start:
+                            continue
+                        step_filters = dict(validated_filters)
+                        step_filters["start_date"] = p_start
+                        step_filters["end_date"] = p_end
+                        if settings.use_real_api:
+                            pdata = await call_real_report_api(
+                                report_key=report_key, intent_spec=period_spec,
+                                validated_filters=step_filters, appuserid=appuserid,
+                                ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                                ai_where_clause=ai_where,
+                            )
+                        else:
+                            pdata = await call_report_api(
+                                report_key, step_filters, company_code, user_id, _REPORT_REGISTRY,
+                            )
+                        p_resolved = _resolve_metric(pdata, period_spec, body.question)
+                        period_rows.append((period_label(preset), p_resolved.value, _record_count(pdata)))
+
+                    if len(period_rows) >= 2:
+                        _u = getattr(intent_spec, "unit", "currency") or "currency"
+                        _ul = getattr(intent_spec, "unit_label", "") or ""
+                        lines = [
+                            f"{lbl}: {_display_value(v or 0, _u, 'INR', _ul)} ({rc} transactions)"
+                            for lbl, v, rc in period_rows
+                        ]
+                        lines.append(f"Sources: {report_key.replace('_', ' ').title()}")
+                        answer = "\n".join(lines)
+                        if market_ctx:
+                            answer = f"{build_market_note(market_ctx, market_snapshot)}\n\n{answer}"
+                        chunk_size = 3
+                        for i in range(0, len(answer), chunk_size):
+                            yield f'data: {_json.dumps({"chunk": answer[i:i + chunk_size]})}\n\n'
+                        yield f'data: {_json.dumps({"done": True})}\n\n'
+                        conversation_store.add_message(session_id, "user", resolved_question)
+                        conversation_store.add_message(session_id, "assistant", answer)
+                        return
+                except Exception as exc:
+                    logger.warning("Stream multi-period query failed: %s", exc)
 
         # Generate answer via the deterministic pipeline
         try:
@@ -1342,9 +1638,14 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                 body.question, history=history, intent_spec=intent_spec,
             )
         except Exception as exc:
+            log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), result_count=record_count, failure_stage="answer_generation")
             logger.exception("Stream: answer generation failed: %s", exc)
             yield f'data: {_json.dumps({"error": "Something went wrong generating this response. Please try again."})}\n\n'
             return
+
+        # Market-context note: honest external/internal boundary
+        if market_ctx:
+            answer = f"{build_market_note(market_ctx, market_snapshot)}\n\n{answer}"
 
         # Stream the deterministic answer in small chunks for UX
         chunk_size = 3  # characters per chunk for smooth streaming feel
@@ -1358,6 +1659,11 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         # Store conversation
         conversation_store.add_message(session_id, "user", resolved_question)
         conversation_store.add_message(session_id, "assistant", answer)
+        log_request_trace(
+            request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
+            confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            result_count=_record_count(data), cache_hit=False,
+        )
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -1480,6 +1786,10 @@ def _feedback_impl(body: FeedbackRequest, request: Request) -> FeedbackResponse:
             company_code=company_code,
             user_id=user_id,
             corrected_metric=body.corrected_metric,
+            failure_reason=body.failure_reason,
+            query_plan=body.query_plan,
+            confidence=body.confidence,
+            latency_ms=body.latency_ms,
         )
         logger.info(
             "Feedback: session=%s rating=%s report=%s question=%s",

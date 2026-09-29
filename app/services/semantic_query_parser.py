@@ -57,6 +57,40 @@ from app.services.prompt_builder import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
+_PARSE_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "erp_query_plan",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "report_key": {"type": "string"},
+                "metric": {"type": "string"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "alternatives": {"type": "array", "items": {"type": "object", "properties": {"intent": {"type": "string"}, "confidence": {"type": "number"}}, "required": ["intent", "confidence"], "additionalProperties": False}},
+                "extra_metrics": {"type": "array", "items": {"type": "string"}},
+                "dimension": {"type": ["string", "null"]},
+                "aggregation": {"type": "string", "enum": ["sum", "avg", "max", "min", "count", "count_distinct"]},
+                "limit": {"type": "integer", "minimum": 1},
+                "filters": {"type": "null"},
+                "date_filter": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "object", "properties": {"preset": {"type": "string"}}, "required": ["preset"], "additionalProperties": False},
+                        {"type": "object", "properties": {"start": {"type": "string"}, "end": {"type": "string"}}, "required": ["start", "end"], "additionalProperties": False},
+                    ]
+                },
+                "sort": {"type": "string", "enum": ["asc", "desc"]},
+                "ai_where": {"type": ["string", "null"]},
+                "clarify": {"type": ["string", "null"]},
+            },
+            "required": ["report_key", "metric", "confidence", "alternatives", "extra_metrics", "dimension", "aggregation", "limit", "filters", "date_filter", "sort", "ai_where", "clarify"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 async def parse_query(
     question: str,
@@ -73,9 +107,15 @@ async def parse_query(
     """
     catalog = _get_catalog(report_name)
 
+    from app.services.retrieval import format_examples, retrieve_examples
+    examples = await retrieve_examples(question, report_name)
+    example_context = format_examples(examples)
+    user_prompt = _build_user_prompt(question, catalog)
+    if example_context:
+        user_prompt = f"{example_context}\n\n{user_prompt}"
     messages = [
         {"role": "system", "content": _build_system_prompt(report_name)},
-        {"role": "user", "content": _build_user_prompt(question, catalog)},
+        {"role": "user", "content": user_prompt},
     ]
 
     # Add recent history for follow-up questions
@@ -85,13 +125,22 @@ async def parse_query(
                 messages.insert(-1, {"role": msg["role"], "content": msg.get("content", "")[:200]})
 
     try:
-        result = await llm_gateway.chat(
-            tier="cheap",
-            messages=messages,
-            temperature=0.0,
-            max_tokens=300,
-            response_format={"type": "json_object"},
-        )
+        try:
+            result = await llm_gateway.chat(
+                tier="cheap",
+                messages=messages,
+                temperature=0.0,
+                max_tokens=300,
+                response_format=_PARSE_RESPONSE_FORMAT,
+            )
+        except llm_gateway.LLMGatewayError:
+            result = await llm_gateway.chat(
+                tier="cheap",
+                messages=messages,
+                temperature=0.0,
+                max_tokens=300,
+                response_format={"type": "json_object"},
+            )
         if token_usage is not None:
             token_usage.append({
                 "provider": result.usage.get("provider", "unknown"),
@@ -101,6 +150,18 @@ async def parse_query(
             })
         data = json.loads(result.text)
         parsed = ParseResult(data)
+        if parsed.confidence < 0.75:
+            try:
+                stronger = await llm_gateway.chat(
+                    tier="strong", messages=messages, temperature=0.0, max_tokens=300,
+                    response_format=_PARSE_RESPONSE_FORMAT,
+                )
+                stronger_data = json.loads(stronger.text)
+                stronger_parsed = ParseResult(stronger_data)
+                if stronger_parsed.confidence >= parsed.confidence:
+                    data, parsed = stronger_data, stronger_parsed
+            except (llm_gateway.LLMGatewayError, json.JSONDecodeError):
+                pass
         # Layer 2: validate metric type vs question intent
         # e.g. "material" (weight) should not return MetalAmount (amount)
         original_metric = parsed.metric

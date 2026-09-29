@@ -1,0 +1,1802 @@
+[
+  {
+    "report": "sales_report",
+    "question": "ring sales by customer this month",
+    "status": "success",
+    "answer": "ring sales by customer this month\nRank\tCustomer\tRevenue\n1\tTushar Ghummar\t1,50,04,529.910\n2\tABHISHEK SHARMA\t81,48,372.550\n3\tsavage Patel\t58,59,864.870\n4\tDIN JARIWALA\t11,77,339.900\n5\tashwin gangani\t11,16,055.410\n\nTotal revenue for top 5: 3,13,06,162.640\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 9.9
+  },
+  {
+    "report": "sales_report",
+    "question": "18k gold sales by sales rep this year",
+    "status": "success",
+    "answer": "18k gold sales by sales rep this year\nRank\tSales representative code\tRevenue\n1\tmetro\t4,05,37,656.350\n2\tadmin\t1,67,05,570.680\n3\tRolex\t1,63,82,547.400\n4\tEMI\t1,22,88,045.820\n5\tvsg\t1,10,87,736.830\n\nTotal revenue for top 5: 9,70,01,557.080\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.9
+  },
+  {
+    "report": "sales_report",
+    "question": "gold ring net weight by branch",
+    "status": "success",
+    "answer": "gold ring net weight by branch\nRank\tFinished-goods stock locker/location name\tWeight (gms)\n1\tHEAD OFFICE\t351.930 gms\n\nTotal weight (gms) for top 1: 351.930 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.4
+  },
+  {
+    "report": "sales_report",
+    "question": "pendant sales by customer today",
+    "status": "success",
+    "answer": "No matching records found.\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.6
+  },
+  {
+    "report": "sales_report",
+    "question": "bangle sales by design this month",
+    "status": "success",
+    "answer": "No matching records found.\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "diamond sales by customer this year",
+    "status": "success",
+    "answer": "diamond sales by customer this year\nRank\tCustomer\tRevenue\n1\tsungs jinwoo\t53,81,02,016.880\n2\tashwin gangani\t25,16,248.640\n3\tCHECK DISCOUNT\t19,89,055.110\n4\tTushar Ghummar\t5,82,930.520\n5\tashish mehra\t5,11,140.000\n\nTotal revenue for top 5: 54,37,01,391.150\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.1
+  },
+  {
+    "report": "sales_report",
+    "question": "sales of ring and pendant this month",
+    "status": "success",
+    "answer": "Total sales: \u20b91.74 crore\nTransactions: 52\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.1
+  },
+  {
+    "report": "sales_report",
+    "question": "18k ring sales today",
+    "status": "success",
+    "answer": "No ring category sales found for the selected filters.\n\nYou can try:\n- Asking for a different date range\n- Overall total ring category sales without filters\n- Ranking like \"top 5 by ring category sales\"\n\nSome questions you can ask:\n- What were the total sales this month?\n- Top 5 customers by revenue\n- Total diamond weight and pieces\n- Gold amount by branch",
+    "sources": "",
+    "ok": true,
+    "latency_s": 2.7
+  },
+  {
+    "report": "sales_report",
+    "question": "gold sales by customer by month",
+    "status": "success",
+    "answer": "gold sales by customer by month\nRank\tCustomer\tRevenue\n1\tHarrine Trivedi\t2,47,60,13,886.510\n2\tTushar Ghummar\t5,04,45,041.500\n3\tashwin gangani\t3,22,84,997.190\n4\tDeepak Pareek\t2,94,54,733.520\n5\tmet Customer\t2,29,98,229.860\n\nTotal revenue for top 5: 2,61,11,96,888.580\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.4
+  },
+  {
+    "report": "sales_report",
+    "question": "customer wise gold weight this year",
+    "status": "success",
+    "answer": "customer wise gold weight this year\nRank\tCustomer\tWeight (gms)\n1\tHarrine Trivedi\t38,533.950 gms\n2\tTushar Ghummar\t4,406.597 gms\n3\tashwin gangani\t3,037.794 gms\n4\tABHISHEK SHARMA\t2,580.317 gms\n5\trobert jr\t2,164.905 gms\n\nTotal weight (gms) for top 5: 50,723.563 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.2
+  },
+  {
+    "report": "sales_report",
+    "question": "which customer bought the most gold this year",
+    "status": "success",
+    "answer": "Gold Weight: Harrine Trivedi\nGold weight: 38,533.950 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.1
+  },
+  {
+    "report": "sales_report",
+    "question": "top 5 designs by net weight this month",
+    "status": "success",
+    "answer": "top 5 designs by net weight this month\nRank\tDesign No\tWeight (gms)\n1\tSBDCHN-1748\t278.000 gms\n2\tSBDCHAR-1731\t251.000 gms\n3\tSBDCHE-1695\t230.000 gms\n4\tSBDCHBR-1668\t227.500 gms\n5\tSBDCHA-1670\t211.000 gms\n\nTotal weight (gms) for top 5: 1,197.500 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.3
+  },
+  {
+    "report": "sales_report",
+    "question": "which sales rep sold most diamond pieces",
+    "status": "success",
+    "answer": "which sales rep sold most diamond pieces\nRank\tSales representative code\tCount (pcs)\n1\tadmin\t20,570 pcs\n2\tRolex\t1,871 pcs\n3\tmetro\t1,222 pcs\n4\tMarshellMartin\t1,024 pcs\n5\tvsg\t758 pcs\n\nTotal count (pcs) for top 5: 25,445 pcs\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.6
+  },
+  {
+    "report": "sales_report",
+    "question": "top 3 categories by sales this month",
+    "status": "success",
+    "answer": "top 3 categories by sales this month\nRank\tCategory\tRevenue\n1\tRing\t1,74,36,884.230\n2\tZero_Rings\t1,32,30,137.820\n3\tFeb_Mens\t70,32,153.210\n4\tPendants\t65,50,453.340\n5\tRing Catagory\t16,18,779.740\n\nTotal revenue for top 5: 4,58,68,408.340\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "which branch gave highest sales this year",
+    "status": "success",
+    "answer": "which branch gave highest sales this year\nRank\tFinished-goods stock locker/location name\tRevenue\n1\tHEAD OFFICE\t3,27,61,28,084.340\n2\tMain Office\t17,81,380.000\n3\tSurat Office\t2,000.000\n\nTotal revenue for top 3: 3,27,79,11,464.340\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "least selling design this month",
+    "status": "success",
+    "answer": "Units/pieces sold \u2014 excludes ERP-return rows: 0\nTransactions: 691\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "which metal type is selling best",
+    "status": "success",
+    "answer": "Total Sales: GOLD\nTotal sales: \u20b9327.28 crore\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.0
+  },
+  {
+    "report": "sales_report",
+    "question": "top customer by diamond weight",
+    "status": "success",
+    "answer": "Total Diamond Carat Weight: Tushar Ghummar\nTotal diamond carat weight: 2,244.885 ctw\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.5
+  },
+  {
+    "report": "sales_report",
+    "question": "average bill value by customer this month",
+    "status": "success",
+    "answer": "average bill value by customer this month\nRank\tCustomer\tRevenue\n1\tTushar Ghummar\t3,51,445.794\n2\tDEEEEEEEEEEEEEEEEEEPAK \t2,83,212.473\n3\tDin Jariwala\t2,35,467.980\n4\tCHECK BROKERAGE\t2,09,300.000\n5\ttest 123\t1,94,193.550\n\nTotal revenue for top 5: 12,73,619.798\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.1
+  },
+  {
+    "report": "sales_report",
+    "question": "which product type performs worst",
+    "status": "success",
+    "answer": "Total Sales: Designer Pendant\nTotal sales: \u20b9252.00\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.6
+  },
+  {
+    "report": "sales_report",
+    "question": "sales for this year this month and today",
+    "status": "success",
+    "answer": "This year: \u20b9327.79 crore (2683 transactions)\nThis month: \u20b95.52 crore (691 transactions)\nToday: \u20b919.91 lakh (8 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.1
+  },
+  {
+    "report": "sales_report",
+    "question": "gross weight for this year today and month",
+    "status": "success",
+    "answer": "This year: 72,493.043 gms (2683 transactions)\nThis month: 10,916.824 gms (691 transactions)\nToday: 167.490 gms (8 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.0
+  },
+  {
+    "report": "sales_report",
+    "question": "compare sales this month vs last month",
+    "status": "success",
+    "answer": "Current period: \u20b95.52 crore\nPrevious period: \u20b933.92 lakh\nGrowth: 1,527.56%\nTransactions: 691\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.5
+  },
+  {
+    "report": "sales_report",
+    "question": "net weight this week and last week",
+    "status": "success",
+    "answer": "Last week: 900.265 gms (58 transactions)\nThis week: 382.930 gms (25 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.0
+  },
+  {
+    "report": "sales_report",
+    "question": "sales growth this month",
+    "status": "success",
+    "answer": "Current period: \u20b95.52 crore\nPrevious period: \u20b933.92 lakh\nGrowth: 1,527.56%\nTransactions: 691\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.1
+  },
+  {
+    "report": "sales_report",
+    "question": "compare gold weight today vs yesterday",
+    "status": "success",
+    "answer": "Current period: 145.030 gms\nPrevious period: 193.842 gms\nGrowth: -25.18%\nTransactions: 8\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.3
+  },
+  {
+    "report": "sales_report",
+    "question": "units sold this month and last month",
+    "status": "success",
+    "answer": "Last month: 202 (202 transactions)\nThis month: 689 (691 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.9
+  },
+  {
+    "report": "sales_report",
+    "question": "diamond pieces for today and yesterday",
+    "status": "success",
+    "answer": "Yesterday: 68 pcs (17 transactions)\nToday: 23 pcs (8 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 3.0
+  },
+  {
+    "report": "sales_report",
+    "question": "sales today and yesterday",
+    "status": "success",
+    "answer": "Yesterday: \u20b932.84 lakh (17 transactions)\nToday: \u20b919.91 lakh (8 transactions)\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.7
+  },
+  {
+    "report": "sales_report",
+    "question": "compare category wise sales this month vs last month",
+    "status": "success",
+    "answer": "compare category wise sales this month vs last month\nRank\tCategory\tRevenue\n1\tRing\t1,74,36,884.230\n2\tZero_Rings\t1,32,30,137.820\n3\tFeb_Mens\t70,32,153.210\n4\tPendants\t65,50,453.340\n5\tRing Catagory\t16,18,779.740\n\nTotal revenue for top 5: 4,58,68,408.340\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 1.9
+  },
+  {
+    "report": "sales_report",
+    "question": "totel selas today",
+    "status": "success",
+    "answer": "Total sales: \u20b919.91 lakh\nTransactions: 8\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 1.7
+  },
+  {
+    "report": "sales_report",
+    "question": "gros wieght this mnth",
+    "status": "success",
+    "answer": "Total gross weight: 10,916.824 gms\nTransactions: 691\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.0
+  },
+  {
+    "report": "sales_report",
+    "question": "custmer wise selas",
+    "status": "success",
+    "answer": "customer wise sales\nRank\tCustomer\tRevenue\n1\tHarrine Trivedi\t2,47,65,99,694.440\n2\tsungs jinwoo\t56,05,78,269.320\n3\tTushar Ghummar\t5,45,32,065.360\n4\tashwin gangani\t4,52,22,814.190\n5\tDeepak Pareek\t3,05,97,945.910\n\nTotal revenue for top 5: 3,16,75,30,789.220\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "wich disign sell most",
+    "status": "success",
+    "answer": "Units/Pieces Sold \u2014 Excludes Erp-Return Rows: Ind344\nUnits/pieces sold \u2014 excludes ERP-return rows: 141\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.1
+  },
+  {
+    "report": "sales_report",
+    "question": "top custmer by amout",
+    "status": "success",
+    "answer": "top customer by amount\nRank\tCustomer\tRevenue\n1\tHarrine Trivedi\t2,47,65,99,694.440\n2\tsungs jinwoo\t56,05,78,269.320\n3\tTushar Ghummar\t5,45,32,065.360\n4\tashwin gangani\t4,52,22,814.190\n5\tDeepak Pareek\t3,05,97,945.910\n\nTotal revenue for top 5: 3,16,75,30,789.220\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.3
+  },
+  {
+    "report": "sales_report",
+    "question": "selas rep performance",
+    "status": "success",
+    "answer": "Best Sales Rep: metro\nTotal sales: \u20b9250.29 crore\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.4
+  },
+  {
+    "report": "sales_report",
+    "question": "dimond pcs today",
+    "status": "success",
+    "answer": "Diamond Pieces Count: 23 pcs\nTransactions: 8\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 1.8
+  },
+  {
+    "report": "sales_report",
+    "question": "yestrday total sell",
+    "status": "success",
+    "answer": "Total sales: \u20b932.84 lakh\nTransactions: 17\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 1.8
+  },
+  {
+    "report": "sales_report",
+    "question": "net wt of gold tday",
+    "status": "success",
+    "answer": "Gold weight: 145.030 gms\nTransactions: 8\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.1
+  },
+  {
+    "report": "sales_report",
+    "question": "comper selas this mnth last mnth",
+    "status": "success",
+    "answer": "Current period: \u20b95.52 crore\nPrevious period: \u20b933.92 lakh\nGrowth: 1,527.56%\nTransactions: 691\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "how much business we did today",
+    "status": "clarify",
+    "answer": "I\u2019m not confident which report or metric you mean. Please specify the report and metric.",
+    "sources": "",
+    "ok": false,
+    "latency_s": 1.8
+  },
+  {
+    "report": "sales_report",
+    "question": "what did we sell most this month",
+    "status": "success",
+    "answer": "Total Sales: Ring\nTotal sales: \u20b91.74 crore\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.0
+  },
+  {
+    "report": "sales_report",
+    "question": "who is buying diamond jewellery",
+    "status": "success",
+    "answer": "I couldn't retrieve the sales_report report: Contact yours Admin",
+    "sources": "",
+    "ok": true,
+    "latency_s": 2.0
+  },
+  {
+    "report": "sales_report",
+    "question": "which designs should we make more",
+    "status": "success",
+    "answer": "which designs should we make more\nRank\tDesign No\tCount\n1\tInd344\t141\n2\toceanic orbit\t23\n3\tRM-ALL\t16\n4\t1\t12\n5\t5\t10\n\nTotal count for top 5: 202\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.4
+  },
+  {
+    "report": "sales_report",
+    "question": "what is our best selling item",
+    "status": "success",
+    "answer": "Units/Pieces Sold \u2014 Excludes Erp-Return Rows: Ind344\nUnits/pieces sold \u2014 excludes ERP-return rows: 141\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.0
+  },
+  {
+    "report": "sales_report",
+    "question": "how many customers came today",
+    "status": "success",
+    "answer": "Unique customers: 3\nTransactions: 3\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "sales_report",
+    "question": "give me sales summary for this week",
+    "status": "clarify",
+    "answer": "What does 'me' refer to: a customer, salesperson, brand, branch, or category?",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "sales_report",
+    "question": "what is trending in our sales",
+    "status": "clarify",
+    "answer": "What does 'trending in our' refer to: a customer, salesperson, brand, branch, or category?",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "sales_report",
+    "question": "which category is not performing",
+    "status": "success",
+    "answer": "which category is not performing\nRank\tCategory\tRevenue\n1\tRING 4 FINGER\t2,37,11,62,722.740\n2\tZero_Rings\t49,45,92,799.920\n3\tRing\t33,60,67,137.830\n4\tOld Metal\t2,22,42,224.820\n5\tFeb_Mens\t82,14,690.040\n\nTotal revenue for top 5: 3,23,22,79,575.350\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": true,
+    "latency_s": 2.2
+  },
+  {
+    "report": "sales_report",
+    "question": "show me something interesting about sales",
+    "status": "clarify",
+    "answer": "What does 'something interesting about' refer to: a customer, salesperson, brand, branch, or category?",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "pending orders by customer this month",
+    "status": "success",
+    "answer": "pending orders by customer this month\nRank\tCustomer Name\tCount\n1\tMorvex\t400\n2\tNeon jewel\t333\n3\tvinayaka LTD\t173\n4\tKolar Gold Field\t146\n5\tHarrine Customer\t83\n\nTotal count for top 5: 1,135\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "order_report",
+    "question": "sold orders by sales rep this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "corporate orders by design this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "sample line orders by customer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "orders by customer this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order amount by design this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "customer wise order quantity this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order gross weight by customer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "orders by order type this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "design wise remaining quantity",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "which customer has most pending orders",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "top 5 designs by order amount",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "who ordered most this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "which order type is most common",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "biggest order by amount this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "how many quotation jobs are pending",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "orders stuck in pending",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "top customer by order quantity",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "which designs are ordered most",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order vs pending ratio this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order gross wt for this year today and month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "compare orders this month vs last month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order amount for this month and last month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "remaining jobs today and this week",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "eta jobs this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "quotation jobs for this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order amount today and yesterday",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "orders placed this week and last week",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "pending orders today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "order quantity for this year and this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "totel ordrs today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "pendng ordr by custmer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "wich custmer ordr most",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "ordr amout this mnth",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "etajobs todya",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "remaning ordrs",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "qutation jobs cont",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "gros wt ordr today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "comper ordr this mnth last mnth",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "order_report",
+    "question": "how meny ordrs pendng",
+    "status": "success",
+    "answer": "Order count: 5,437\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "order_report",
+    "question": "how many orders we got today",
+    "status": "success",
+    "answer": "Order count: 19\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "order_report",
+    "question": "what orders are still pending",
+    "status": "success",
+    "answer": "what orders are still pending\nRank\tStatus\tCount\n1\tpending\t5,437\n\nTotal count for top 1: 5,437\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "order_report",
+    "question": "which customer gives us most orders",
+    "status": "success",
+    "answer": "Bill Count: Tushar Ghummar\nBill Count: 548\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": false,
+    "latency_s": 2.3
+  },
+  {
+    "report": "order_report",
+    "question": "show me today's order summary",
+    "status": "success",
+    "answer": "Total order amount: \u20b923.49 lakh\nTransactions: 19\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "order_report",
+    "question": "what is the value of pending orders",
+    "status": "success",
+    "answer": "what is the value of pending orders\nRank\tStatus\tRevenue\n1\tpending\t50,37,26,884.650\n\nTotal revenue for top 1: 50,37,26,884.650\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "order_report",
+    "question": "how many orders did we complete this month",
+    "status": "success",
+    "answer": "Order count: 1,442\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.8
+  },
+  {
+    "report": "order_report",
+    "question": "which orders are running late",
+    "status": "success",
+    "answer": "which orders are running late\nRank\tSKU/Job No\tCount\n1\tsku/6266/2025\t175\n2\tsku/1229/2025\t42\n3\tsku/2629/2025\t30\n4\tsku/1423/2025\t20\n5\tsku/1466/2025\t20\n\nTotal count for top 5: 287\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "order_report",
+    "question": "give order pipeline for this month",
+    "status": "success",
+    "answer": "give order pipeline for this month\nRank\tOrder Class\tRevenue\n1\tRegular jobs\t3,89,32,439.510\n2\tSample line jobs\t54,473.410\n\nTotal revenue for top 2: 3,89,86,912.920\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.7
+  },
+  {
+    "report": "order_report",
+    "question": "who placed the biggest order",
+    "status": "success",
+    "answer": "who placed the biggest order\nRank\tSales Rep\tRevenue\n1\travia\t11,49,29,202.740\n2\tEMI\t10,96,98,674.950\n3\trudra\t5,14,25,555.590\n4\tRolex\t4,06,85,601.220\n5\tvsg\t3,91,86,456.900\n\nTotal revenue for top 5: 35,59,25,491.400\nSources: Order Report",
+    "sources": "Order Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "order_report",
+    "question": "what should we deliver first",
+    "status": "clarify",
+    "answer": "I\u2019m not confident which report or metric you mean. Please specify the report and metric.",
+    "sources": "",
+    "ok": false,
+    "latency_s": 1.7
+  },
+  {
+    "report": "wip_report",
+    "question": "wip jobs by department this month",
+    "status": "success",
+    "answer": "wip jobs by department this month\nRank\tCurrent production department / status\tCount\n1\tPending Request\t905\n2\tsetting-Receive\t55\n3\tsetting-Issue\t53\n4\tBagging Running\t44\n5\tFiling-Issue\t35\n\nTotal count for top 5: 1,092\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "wip_report",
+    "question": "job cost by customer this year",
+    "status": "success",
+    "answer": "job cost by customer this year\nRank\tCustomer code\tRevenue\n1\tNJ\t6,22,01,11,071.910\n2\tRDsuza\t3,59,12,882.980\n3\tdeep1\t42,70,484.070\n4\tThGems\t27,37,897.890\n5\tDee\t17,06,244.530\n\nTotal revenue for top 5: 6,26,47,38,581.380\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "wip_report",
+    "question": "regular jobs by department",
+    "status": "success",
+    "answer": "regular jobs by department\nRank\tCurrent production department / status\tCount\n1\tPending Request\t2,534\n2\tSprue Cutting-Receive\t272\n3\tsetting-Issue\t214\n4\tsetting-Receive\t146\n5\tAssembling-Issue\t130\n\nTotal count for top 5: 3,296\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "wip_report",
+    "question": "repair jobs by worker",
+    "status": "success",
+    "answer": "repair jobs by worker\nRank\tAssigned worker name\tCount\n1\t \t160\n2\tHenry Ellis Levrony\t20\n3\ttransaction r\t20\n4\tHarrine Jani\t7\n5\tanu jain\t6\n\nTotal count for top 5: 213\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.3
+  },
+  {
+    "report": "wip_report",
+    "question": "jobs by location this month",
+    "status": "success",
+    "answer": "jobs by location this month\nRank\tJob manufacturing location\tCount\n1\tINDIA\t1,166\n2\tUS\t47\n3\tMaharashtra\t12\n4\tMumbai\t5\n5\tGujarat\t3\n\nTotal count for top 5: 1,233\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "wip_report",
+    "question": "gross weight by department this year",
+    "status": "success",
+    "answer": "gross weight by department this year\nRank\tCategory\tWeight (gms)\n1\tRING 4 FINGER\t37,794.271 gms\n2\tZero_Rings\t21,722.196 gms\n3\tRing\t6,403.095 gms\n4\tOld Metal\t945.357 gms\n5\tRing Catagory\t885.704 gms\n\nTotal weight (gms) for top 5: 67,750.623 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": false,
+    "latency_s": 2.1
+  },
+  {
+    "report": "wip_report",
+    "question": "sample jobs by customer",
+    "status": "success",
+    "answer": "sample jobs by customer\nRank\tCustomer code\tCount\n1\tdeep1\t11\n2\t0607\t9\n3\tRDsuza\t2\n4\tvidsy\t1\n5\tABHISHEKS\t1\n\nTotal count for top 5: 24\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "wip_report",
+    "question": "worker wise job cost",
+    "status": "success",
+    "answer": "worker wise job cost\nRank\tAssigned worker name\tRevenue\n1\t \t6,22,23,70,937.190\n2\tHenry Ellis Levrony\t2,53,16,670.250\n3\tgranthi patel\t1,08,09,568.730\n4\tDeepak Pareek\t27,32,921.600\n5\tFiller 02\t17,04,065.150\n\nTotal revenue for top 5: 6,26,29,34,162.920\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.8
+  },
+  {
+    "report": "wip_report",
+    "question": "customer wise wip jobs this month",
+    "status": "success",
+    "answer": "customer wise wip jobs this month\nRank\tCustomer code\tCount\n1\t0607\t430\n2\tRDsuza\t182\n3\tNJ\t165\n4\tdeep1\t163\n5\tharrine_cust\t154\n\nTotal count for top 5: 1,094\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.8
+  },
+  {
+    "report": "wip_report",
+    "question": "department wise net weight",
+    "status": "success",
+    "answer": "department wise net weight\nRank\tCategory\tWeight (gms)\n1\tRING 4 FINGER\t37,502.018 gms\n2\tZero_Rings\t19,803.748 gms\n3\tRing\t5,390.369 gms\n4\tOld Metal\t860.183 gms\n5\tPendants\t683.123 gms\n\nTotal weight (gms) for top 5: 64,239.441 gms\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": false,
+    "latency_s": 2.0
+  },
+  {
+    "report": "wip_report",
+    "question": "which department has most jobs",
+    "status": "success",
+    "answer": "Job Count: Pending Request\nJob count: 2,726\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "wip_report",
+    "question": "top 5 customers by wip job cost",
+    "status": "success",
+    "answer": "top 5 customers by wip job cost\nRank\tCustomer code\tRevenue\n1\tNJ\t6,22,01,11,071.910\n2\tRDsuza\t3,59,13,982.620\n3\tdeep1\t42,70,484.070\n4\tThGems\t27,37,897.890\n5\tDee\t17,06,244.530\n\nTotal revenue for top 5: 6,26,47,39,681.020\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "wip_report",
+    "question": "which worker has most pending jobs",
+    "status": "success",
+    "answer": "Job Count:  \nJob count: 3,803\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "wip_report",
+    "question": "where are jobs getting stuck",
+    "status": "success",
+    "answer": "where are jobs getting stuck\nRank\tCurrent department name\tCount\n1\t\t3,745\n2\tsetting\t226\n3\tPre Polish\t159\n4\tAssembling\t149\n5\tFiling\t113\n\nTotal count for top 5: 4,392\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "wip_report",
+    "question": "highest job cost job right now",
+    "status": "success",
+    "answer": "Total Wip Cost: 1/11282\nTotal job cost: \u20b9622.00 crore\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.3
+  },
+  {
+    "report": "wip_report",
+    "question": "which job type takes most cost",
+    "status": "success",
+    "answer": "Total Job Cost: Regular Job\nTotal job cost: \u20b9626.57 crore\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.5
+  },
+  {
+    "report": "wip_report",
+    "question": "jobs running behind schedule",
+    "status": "success",
+    "answer": "jobs running behind schedule\nRank\tSerial job number\tCount\n1\t1/1122\t-229\n2\t1/4117\t-157\n3\t1/8031\t-97\n4\t1/8325\t-94\n5\t1/8598\t-89\n\nTotal count for top 5: -666\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.6
+  },
+  {
+    "report": "wip_report",
+    "question": "total wip value by department",
+    "status": "success",
+    "answer": "total wip value by department\nRank\tCurrent production department / status\tRevenue\n1\tCasting-Issue\t6,22,00,01,070.450\n2\tAssembling-Issue\t2,70,87,536.370\n3\tPre Polish-Issue\t1,21,63,338.620\n4\tFiling-Issue\t22,17,644.660\n5\tsetting-Issue\t18,85,118.200\n\nTotal revenue for top 5: 6,26,33,54,708.300\nSources: Wip Report",
+    "sources": "Wip Report",
+    "ok": true,
+    "latency_s": 1.4
+  },
+  {
+    "report": "wip_report",
+    "question": "which customer jobs are in progress",
+    "status": "success",
+    "answer": "No matching records found.\nSources: Sales Report",
+    "sources": "Sales Report",
+    "ok": false,
+    "latency_s": 2.3
+  },
+  {
+    "report": "wip_report",
+    "question": "average job cost by department",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "req gross wt for this year today and month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "compare wip jobs this month vs last month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "job cost for this year and this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "wip jobs today and yesterday",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "new jobs this week and last week",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "job cost this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "wip jobs count for this year this month and today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "net weight for this month and today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "compare job cost this month vs last month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "jobs added today and yesterday",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "totel wip jobs",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "wich departmnt has most jobs",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "job cost by custmer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "pendingg jobs today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "werk wise jobs",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "wip gros wieght",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "how meny jobs in progres",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "jobs stuk in departmnt",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "comper wip this mnth last mnth",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "reguler jobs count",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "how many jobs are in production",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "what is stuck in manufacturing",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "which department is overloaded",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "show me today's production summary",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "what is the value of work in progress",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "which jobs need attention",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "who is working on most jobs",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "how much work is pending in polishing",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "give me production pipeline",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "wip_report",
+    "question": "what is our factory workload",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax amount by month this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "gst by customer this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax amount by bill today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "customer wise tax this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "monthly tax summary",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax by category this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "gst amount for gold sales",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax by sales rep this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "bill wise tax today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax amount by design this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "which customer paid most tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "highest tax bill today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "total gst collected this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "which month had highest tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "average tax per bill",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax contribution by customer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "top 5 bills by tax amount",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "which category generates most gst",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "how much tax we collected today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "compare tax across months",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax amount for this year this month and today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "compare tax this month vs last month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "gst today and yesterday",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax this week and last week",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax growth this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax for today",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax for this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "compare gst this year vs last year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "monthly tax for this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax amount today and this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "totel tax amout",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "gst collectd this mnth",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "wich bill has higest tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax by custmer",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "comper tax this mnth last mnth",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "todya gst",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "montly tax sumary",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "how meny tax we colect",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax for gold selas",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "bil wise tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "how much gst we paid this month",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "what is our tax liability",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "show me today's tax collection",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "which customer contributes most tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "give me tax summary for this quarter",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "how much tax on gold sales",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "what is the gst breakup",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "tax report for this week",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "which invoice has highest tax",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  },
+  {
+    "report": "tax_report",
+    "question": "total tax collected this year",
+    "status": "?",
+    "answer": "",
+    "sources": "",
+    "ok": false,
+    "latency_s": 0.0
+  }
+]

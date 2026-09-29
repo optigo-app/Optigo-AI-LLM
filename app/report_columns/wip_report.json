@@ -1,5 +1,5 @@
 {
-  "description": "WIP (work-in-progress) report — jobs in production, their status, costing, weights, and engaged materials",
+  "description": "WIP (work-in-progress) report \u2014 jobs in production, their status, costing, weights, and engaged materials",
   "sp": 245,
   "report_id": 21,
   "default_metric": "JobCost",
@@ -7,7 +7,7 @@
   "tables": [
     "ProductionManagement_SerialNoBook"
   ],
-  "base_filter": "MasterManagement_productionstatusid NOT IN (28) AND iStore_IsJobClosed = 0 AND isMerged = 0 AND isETARejected = 0",
+  "base_filter": "ISNULL(MasterManagement_productionstatusid,0) NOT IN (28) AND ISNULL(iStore_IsJobClosed,0) = 0 AND ISNULL(ismerged,0) = 0 AND ISNULL(isAllSplitedJobsNotMerged,0) <> 1 AND ISNULL(IsSplitProcess_NotCompleted,0) = 0 AND ISNULL(isETARejected,0) = 0 AND ISNULL(Mastermanagement_MFG_JobLastLocationid,0) IN (1,2,3,4,5) AND (ISNULL(isReverseEngage,0) <> 1 OR (ISNULL(isReverseEngage,0) = 1 AND ISNULL(REcnt,0) = 0 AND ISNULL(ReverseEngage_parent_serialjobno,'') <> ''))",
   "columns": {
     "jobentrydate": {
       "sql": "jobentrydate",
@@ -691,6 +691,29 @@
       "description": "Count of unique customers with WIP jobs"
     }
   },
+  "dimension_aliases": {
+    "customer": "Customercode",
+    "customer code": "Customercode",
+    "design": "Designcode",
+    "design no": "designno",
+    "sku": "SKUNO",
+    "serial job": "serialjobno",
+    "serial job no": "serialjobno",
+    "metal type": "metal_type_name",
+    "metal": "metal_type_name",
+    "metal colour": "MetalColor",
+    "department name": "Current_Departmentname",
+    "location": "JobLocation",
+    "job location": "JobLocation",
+    "worker": "workername",
+    "karigar": "workername",
+    "brand": "brandname",
+    "jadau": "jadauname",
+    "order type": "OrderTypeName",
+    "make type": "maketypename",
+    "job type": "jobtype",
+    "sales rep": "customer_salesrep_customercode"
+  },
   "filter_key_map": {
     "category": "category",
     "metal_type": "metal_type_name",
@@ -815,10 +838,14 @@
     },
     "GrossWeightgm": {
       "type": "weight",
-      "label": "Gross weight",
+      "label": "Req. Gross Wt",
       "aliases": [
         "gross weight",
         "gross wt",
+        "req gross wt",
+        "req gross weight",
+        "required gross weight",
+        "required gross wt",
         "total weight"
       ]
     },
@@ -1368,12 +1395,12 @@
     "unit": "currency"
   },
   "suggested_questions": [
-      "total jobs in progress",
-      "wip aging report",
-      "department wise jobs",
-      "worker wise job count",
-      "total job cost",
-      "customer wise wip",
-      "jobs by location"
+    "total jobs in progress",
+    "wip aging report",
+    "department wise jobs",
+    "worker wise job count",
+    "total job cost",
+    "customer wise wip",
+    "jobs by location"
   ]
 }

@@ -136,6 +136,24 @@ def _load_allowed_columns() -> Dict[str, Set[str]]:
                 cols.add(sql.lower())
             if name:
                 cols.add(name.lower())
+        # Physical base-table columns referenced inside computed expressions
+        # (e.g. wip jobtype CASE uses DI.REcnt) are valid refs in ai_where.
+        for name, meta in report_cfg.get("columns", {}).items():
+            if meta.get("not_available") or not meta.get("computed"):
+                continue
+            expressions = [meta.get("dimension_expr", ""), meta.get("metric_expr", "")]
+            for expr_map_key in ("table_dimension_exprs", "table_metric_exprs"):
+                expr_map = meta.get(expr_map_key, {}) or {}
+                if isinstance(expr_map, dict):
+                    expressions.extend(expr_map.values())
+            for expr in expressions:
+                if expr:
+                    for ref in re.findall(r'DI\.(\w+)', expr, re.IGNORECASE):
+                        cols.add(ref.lower())
+        # Base columns referenced by name-filter expressions are valid too.
+        for expr in (report_cfg.get("name_filter_map") or {}).values():
+            for ref in re.findall(r'DI\.(\w+)', expr or "", re.IGNORECASE):
+                cols.add(ref.lower())
         # Add physical columns used by computed dimensions and name-based filters
         # CustomerFullName = CONCAT(firstname, ' ', lastname)
         # SalesRep = CONCAT(salesrepfirstname, ' ', salesreplastname)

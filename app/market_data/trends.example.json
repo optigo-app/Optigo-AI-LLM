@@ -1,0 +1,22 @@
+{
+  "updated_at": "2026-09-29T00:00:00Z",
+  "_readme": "Copy this file to trends.json to enable external market context in answers. Every entry MUST include observation, source_name, and retrieved_at — unsourced entries are silently dropped. Entries are curated: put only approved, citable market observations here (industry reports, association bulletins, approved APIs).",
+  "entries": [
+    {
+      "topic": "trends",
+      "observation": "EXAMPLE — replace with an approved, citable observation, e.g. 'Lightweight daily-wear gold jewellery demand rising in urban markets'",
+      "period": "2026-Q3",
+      "source_name": "EXAMPLE — e.g. World Gold Council report / approved market feed",
+      "source_url": "https://example.com/source",
+      "retrieved_at": "2026-09-29T00:00:00Z"
+    },
+    {
+      "topic": "gold_rate",
+      "observation": "EXAMPLE — e.g. '24K gold trading near Rs. X per 10g'",
+      "period": "2026-09-29",
+      "source_name": "EXAMPLE — approved rate provider",
+      "source_url": "https://example.com/rates",
+      "retrieved_at": "2026-09-29T00:00:00Z"
+    }
+  ]
+}

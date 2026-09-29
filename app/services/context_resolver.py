@@ -60,6 +60,58 @@ _SHORT_QUESTION_THRESHOLD = 25
 # Compile the cue + standalone regexes once at import time
 _FOLLOWUP_RE = re.compile("|".join(_FOLLOWUP_CUES), re.IGNORECASE)
 _STANDALONE_RE = re.compile("|".join(_STANDALONE_INDICATORS), re.IGNORECASE)
+_DATE_CHANGE_RE = re.compile(r"\b(change|different|another|other|modify|update|switch|try)\b.*\b(date|period|range)\b|\b(date|period|range)\b.*\b(change|different|another|other|modify|update|switch)\b", re.IGNORECASE)
+_DATE_VALUE_RE = re.compile(
+    r"\b(today|yesterday|tomorrow|this\s+(week|month|year)|last\s+(week|month|year)|"
+    r"january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4})\b",
+    re.IGNORECASE,
+)
+
+
+def needs_date_clarification(question: str) -> bool:
+    return bool(_DATE_CHANGE_RE.search(question) and not _DATE_VALUE_RE.search(question))
+
+
+def ambiguous_entity_value(question: str) -> Optional[str]:
+    lowered = question.lower()
+    field_words = (
+        "customer", "client", "buyer", "customer type", "customer segment",
+        "business class", "salesperson", "sales rep", "employee", "brand",
+        "branch", "category", "manufacturer", "supplier", "collection",
+        "product type", "metal", "wastage", "invoice", "bill",
+        "job", "design", "sku",
+    )
+    if any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in field_words):
+        return None
+    match = re.match(
+        r"^\s*(?:(?:what|show|give|tell)\s+(?:me\s+)?(?:(?:is|was|are|were)\s+)?(?:the\s+)?|how\s+much\s+)?"
+        r"(?!(?:what|show|give|tell|how|the|a|an|is|was|are|were)\s)"
+        r"([A-Za-z][A-Za-z0-9._&-]*(?:\s+[A-Za-z][A-Za-z0-9._&-]*){0,2}?)\s+"
+        r"(?:total\s+)?(?:sales?|revenue|amount|value)\b",
+        question,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = match.group(1).strip()
+    excluded = {
+        "what", "show", "give", "tell", "how much", "total",
+        "sale", "sales", "revenue", "amount", "value",
+        "tax", "total tax", "gst", "cgst", "sgst", "igst", "tcs", "tds",
+        "order", "orders", "wip", "work in progress",
+        "today", "yesterday", "this month", "last month", "this year", "last year",
+        "compare", "comparison", "growth", "monthly", "daily", "weekly", "yearly",
+        "this", "last", "previous", "current",
+        "top", "best", "worst", "bottom", "average", "avg", "my", "our", "all",
+        "highest", "lowest", "biggest", "smallest", "most", "least",
+    }
+    # "compare our diamond sales" — the phrase before 'sales' can be multi-word;
+    # if it starts with a comparison/period keyword it is not an entity.
+    first_word = value.lower().split()[0] if value.split() else ""
+    if value.lower() in excluded or first_word in excluded:
+        return None
+    return value
 
 
 def looks_like_followup(question: str, history: Optional[List[Dict[str, str]]]) -> bool:

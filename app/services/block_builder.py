@@ -466,6 +466,42 @@ def build_error_blocks(message: str) -> List[Dict[str, Any]]:
     return [{"type": "error", "content": message}]
 
 
+def build_date_range_input_block(content: str) -> Dict[str, Any]:
+    return {
+        "type": "date_range_input",
+        "title": "Select date range",
+        "content": content,
+        "start_field": "start_date",
+        "end_field": "end_date",
+        "presets": [
+            {"label": "Today", "value": "today"},
+            {"label": "This month", "value": "this_month"},
+            {"label": "Last month", "value": "last_month"},
+            {"label": "This year", "value": "this_year"},
+        ],
+        "submit_label": "Apply date range",
+        "submit_message_template": "Use date range {start_date} to {end_date}",
+    }
+
+
+def build_entity_choice_block(value: str, content: str) -> Dict[str, Any]:
+    return {
+        "type": "choice_input",
+        "title": "Confirm field",
+        "content": content,
+        "field": "entity_type",
+        "value": value,
+        "options": [
+            {"label": "Customer", "value": "customer", "message": f"Customer: {value}"},
+            {"label": "Salesperson", "value": "salesperson", "message": f"Salesperson: {value}"},
+            {"label": "Brand", "value": "brand", "message": f"Brand: {value}"},
+            {"label": "Branch", "value": "branch", "message": f"Branch: {value}"},
+            {"label": "Category", "value": "category", "message": f"Category: {value}"},
+        ],
+        "allow_custom": False,
+    }
+
+
 def build_clarify_blocks(report_key: str) -> List[Dict[str, Any]]:
     """Build a clarification prompt with report-aware suggestions.
 
@@ -531,9 +567,10 @@ def build_no_data_blocks(label: str, filters: Dict[str, Any], source_report: str
         "type": "text",
         "content": f"No {label.lower()} found for the selected filters.",
     })
+    if filters.get("start_date") or filters.get("end_date"):
+        blocks.append(build_date_range_input_block("Select another date range and try again."))
 
     suggestions = [
-        "Try a different date range",
         f"Overall total {label.lower()} without filters",
         f"Top 5 by {label.lower()}",
         "What were the total sales this month?",
@@ -603,7 +640,7 @@ def parse_llm_blocks(raw_text: str) -> List[Dict[str, Any]]:
         TextBlock, HeadingBlock, TableBlock, ListBlock,
         ChartBlock, AssumptionBlock, ErrorBlock,
         MetricCardBlock, BreakdownBlock, PeriodBlock, GlossaryBlock,
-        ClarifyBlock,
+        ClarifyBlock, DateRangeInputBlock, ChoiceInputBlock,
     )
     _BLOCK_MODELS = {
         "text": TextBlock,
@@ -618,6 +655,8 @@ def parse_llm_blocks(raw_text: str) -> List[Dict[str, Any]]:
         "period": PeriodBlock,
         "glossary": GlossaryBlock,
         "clarify": ClarifyBlock,
+        "date_range_input": DateRangeInputBlock,
+        "choice_input": ChoiceInputBlock,
     }
     try:
         data = json.loads(raw_text)
@@ -704,6 +743,8 @@ def blocks_to_text(blocks: List[Dict[str, Any]]) -> str:
                 parts.append(f"{label}: {value}")
             elif value:
                 parts.append(value)
+        elif btype in ("clarify", "date_range_input", "choice_input"):
+            parts.append(b.get("content", ""))
         elif btype == "glossary":
             terms = b.get("terms", {})
             if terms:

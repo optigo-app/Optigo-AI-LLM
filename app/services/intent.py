@@ -139,6 +139,7 @@ class IntentSpec:
     unit: str = ""
     unit_label: str = ""  # display suffix like "ctw", "pcs", "g", "%"
     is_field_metric: bool = False  # metric refers to a column/field directly
+    override_metric: bool = False  # deterministic intent may replace a parser-selected metric
     state: str = "SUCCESS"
     state_reason: str = ""
     clear_filters: Dict[str, Any] = None  # filters to remove because they were hallucinated
@@ -168,7 +169,7 @@ def _apply_pattern(spec: IntentSpec, rule: Dict[str, Any]) -> IntentSpec:
         spec.metric_key = rule["metric"]
     for key in [
         "intent", "metric_key", "aggregation", "dimension", "sort", "limit",
-        "unit", "is_field_metric", "state", "state_reason", "clear_filters", "override_filters"
+        "unit", "is_field_metric", "override_metric", "state", "state_reason", "clear_filters", "override_filters"
     ]:
         if key in rule:
             setattr(spec, key, rule[key])
@@ -267,6 +268,26 @@ def normalize_filters(
     # Normalize any string filter values to canonical vocabulary
     for field, value in list(cleaned.items()):
         cleaned[field] = _normalize_dimension_value(field, value, report_key)
+
+    # Drop values declared invalid for the target column (e.g. the LLM leaks a
+    # metric word like 'net' into a category filter). Config-driven per column.
+    from app.services.column_registry import get_filter_invalid_values
+    for field, value in list(cleaned.items()):
+        invalid_l = get_filter_invalid_values(report_key, field)
+        if not invalid_l:
+            continue
+        if isinstance(value, str) and value.lower().strip() in invalid_l:
+            del cleaned[field]
+            if field in mentioned:
+                mentioned.remove(field)
+        elif isinstance(value, list):
+            kept = [v for v in value if str(v).lower().strip() not in invalid_l]
+            if kept:
+                cleaned[field] = kept
+            else:
+                del cleaned[field]
+                if field in mentioned:
+                    mentioned.remove(field)
 
     # Field re-mapping: a value that the LLM put in the wrong field often
     # belongs to another known dimension. Move it, don't silently leave it wrong.

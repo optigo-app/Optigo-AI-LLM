@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT_TEMPLATE = """You are a query parser for an ERP jewellery system. Extract structured query intent from natural language.
 
 Return ONLY JSON:
-{{"report_key":"{report_key}","metric":"catalog metric name","extra_metrics":["catalog metric name"],"dimension":"grouping dimension or null","aggregation":"sum|avg|max|min|count","limit":1,"filters":null,"date_filter":{{"preset":"today|yesterday|this_month|last_month|this_year|last_year|this_week|last_week"}}|{{"start":"YYYY-MM-DD","end":"YYYY-MM-DD"}}|null,"sort":"desc|asc","ai_where":"SQL WHERE clause or null","clarify":null}}
+{{"report_key":"{report_key}","metric":"catalog metric name","confidence":0.0,"alternatives":[],"extra_metrics":["catalog metric name"],"dimension":"grouping dimension or null","aggregation":"sum|avg|max|min|count|count_distinct","limit":1,"filters":null,"date_filter":{{"preset":"today|yesterday|this_month|last_month|this_year|last_year|this_week|last_week"}}|{{"start":"YYYY-MM-DD","end":"YYYY-MM-DD"}}|null,"sort":"desc|asc","ai_where":"SQL WHERE clause or null","clarify":null}}
 
 Rules:
-- metric: catalog name, not column name. "how many bills"→total_count+count, "how many customers"→unique_customers+count, "how many designs"→unique_designs+count, "how many units/pieces"→total_count+count.
+- metric: catalog name, not column name. "how many bills"→total_count+count, "how many customers"→unique_customers+count, "how many designs"→unique_designs+count, "how many units/pieces"→units_sold+count_distinct.
 - Metric types in catalog: [amount]=monetary value (₹), [weight]=physical weight (gms/ct), [count]=number of records, [rate]=per-unit price. Match the user's intent type: "material"→[weight] metric, "amount/value"→[amount] metric, "how many"→[count] metric, "rate"→[rate] metric. NEVER return an [amount] metric when the user asks for weight/quantity.
 - aggregation: "average/avg"→avg, "total/sum"→sum, "highest/max"→max, "lowest/min"→min.
 - "average customer purchase/bill value"→metric=Amount, aggregation=avg.

@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "examples": [
+    {
+      "question": "Show total sales this month",
+      "intent": "sales_report",
+      "report_key": "sales_report",
+      "entities": {"date_range": "this_month"},
+      "query_plan": {"metric": "Amount", "aggregation": "sum", "date_filter": {"preset": "this_month"}, "limit": 1},
+      "procedure": "DynamicReport_LLMChatbeta",
+      "expected_result_type": "aggregate",
+      "verified": true
+    },
+    {
+      "question": "Show top 5 customers by sales",
+      "intent": "sales_report",
+      "report_key": "sales_report",
+      "entities": {},
+      "query_plan": {"metric": "Amount", "aggregation": "sum", "dimension": "CustomerFullName", "sort": "desc", "limit": 5},
+      "procedure": "DynamicReport_LLMChatbeta",
+      "expected_result_type": "breakdown",
+      "verified": true
+    }
+  ]
+}

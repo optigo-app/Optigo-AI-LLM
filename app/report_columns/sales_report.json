@@ -1,5 +1,5 @@
 {
-  "description": "Sales invoice detail report — revenue, metals, diamonds, weights, categories, customers, sales reps",
+  "description": "Sales invoice detail report \u2014 revenue, metals, diamonds, weights, categories, customers, sales reps",
   "sp": 240,
   "report_id": 19,
   "default_metric": "Amount",
@@ -76,15 +76,15 @@
       }
     },
     "CustomerName": {
-      "sql": "usermanagement_customercode",
+      "sql": "CustomerName",
       "type": "string",
       "desc": "Customer",
       "grp": "customer"
     },
     "CustomerType": {
-      "sql": "MasterManagement_BusinessClassname",
+      "sql": "CustomerType",
       "type": "string",
-      "desc": "Customer Type",
+      "desc": "Customer segment / business class",
       "grp": "customer",
       "fo": true,
       "filter": {
@@ -100,7 +100,7 @@
       "sql": "CustomerFullName",
       "type": "string",
       "calc": true,
-      "de": "ISNULL(CONCAT(DI.usermanagement_customerfirstname,' ',DI.usermanagement_customerlastname),'')",
+      "de": "ISNULL(DI.CustomerFullName,'')",
       "desc": "Customer",
       "grp": "customer",
       "filter": {
@@ -113,7 +113,7 @@
       }
     },
     "categoryname": {
-      "sql": "mastermanagement_categoryname",
+      "sql": "categoryname",
       "type": "string",
       "desc": "Category",
       "grp": "product",
@@ -122,11 +122,20 @@
         "aliases": [
           "category",
           "product category"
+        ],
+        "invalid_values": [
+          "net",
+          "gross",
+          "total",
+          "weight",
+          "amount",
+          "value",
+          "pure"
         ]
       }
     },
     "subcategoryname": {
-      "sql": "mastermanagement_subcategoryname",
+      "sql": "subcategoryname",
       "type": "string",
       "desc": "Sub-Category",
       "grp": "product",
@@ -140,7 +149,7 @@
       }
     },
     "goldcolorname": {
-      "sql": "MasterManagement_goldcolorname",
+      "sql": "goldcolorname",
       "type": "string",
       "desc": "Gold Colour",
       "grp": "metal",
@@ -163,7 +172,7 @@
     "serialjobno": {
       "sql": "StockBarcode",
       "type": "string",
-      "desc": "Serial job number — same as StockBarcode, not a separate column",
+      "desc": "Serial job number \u2014 same as StockBarcode, not a separate column",
       "grp": "manufacturing"
     },
     "jobno_excel": {
@@ -171,11 +180,11 @@
       "type": "string",
       "calc": true,
       "de": "REPLACE(ISNULL(DI.StockBarcode,''),'_','')",
-      "desc": "Job number from Excel — derived as StockBarcode with underscores removed",
+      "desc": "Job number from Excel \u2014 derived as StockBarcode with underscores removed",
       "grp": "manufacturing"
     },
     "SKUNO": {
-      "sql": "job_skuno",
+      "sql": "SKUNO",
       "type": "string",
       "desc": "SKU",
       "grp": "inventory",
@@ -195,7 +204,7 @@
       "grp": "inventory"
     },
     "DefaultImageName": {
-      "sql": "design_DefaultImageName",
+      "sql": "DefaultImageName",
       "type": "string",
       "desc": "Default product image filename",
       "grp": "image"
@@ -207,7 +216,7 @@
       "grp": "image"
     },
     "goldtypename": {
-      "sql": "mastermanagement_goldtypename",
+      "sql": "goldtypename",
       "type": "string",
       "desc": "Metal Type",
       "grp": "metal",
@@ -252,10 +261,8 @@
       "grp": "financial"
     },
     "grosswt": {
-      "sql": "GrossCTWWithLoss",
+      "sql": "grosswt",
       "type": "decimal",
-      "calc": true,
-      "me": "ISNULL(DI.GrossCTWWithLoss,0)",
       "desc": "Gross weight including metal and stones (grams)",
       "grp": "metal_weight",
       "unit": "gms",
@@ -266,52 +273,50 @@
       ]
     },
     "dpcs": {
-      "sql": "diamond_totalpieces",
+      "sql": "dpcs",
       "type": "int",
       "desc": "Number of diamond pieces",
       "grp": "diamond",
       "unit": "pcs"
     },
     "dctw": {
-      "sql": "DiamondCTWwithLoss",
+      "sql": "dctw",
       "type": "decimal",
       "desc": "Total diamond carat weight",
       "grp": "diamond",
       "unit": "ctw"
     },
     "cspcs": {
-      "sql": "colorstone_totalpieces",
+      "sql": "cspcs",
       "type": "int",
       "desc": "Number of colour-stone pieces",
       "grp": "colour_stone",
       "unit": "pcs"
     },
     "csctw": {
-      "sql": "ActualColorStoneWeight",
+      "sql": "csctw",
       "type": "decimal",
       "desc": "Total colour-stone carat weight",
       "grp": "colour_stone",
       "unit": "ctw"
     },
     "miscpcs": {
-      "sql": "totalmiscpcs",
+      "sql": "miscpcs",
       "type": "int",
       "desc": "Number of miscellaneous stones/components",
       "grp": "misc",
       "unit": "pcs"
     },
     "miscwt": {
-      "sql": "Totalmiscappliedweight",
+      "sql": "miscwt",
       "type": "decimal",
       "desc": "Weight of miscellaneous stones/components (grams)",
       "grp": "misc",
       "unit": "gms"
     },
     "IsSupplierJob": {
-      "sql": "jobflowfrom",
+      "sql": "IsSupplierJob",
       "type": "int",
-      "calc": true,
-      "me": "CASE WHEN ISNULL(DI.jobflowfrom,'')='MFGJob' THEN 0 ELSE 1 END",
       "desc": "Boolean: is the job from an external supplier? (derived from jobflowfrom)",
       "grp": "manufacturing",
       "fo": true
@@ -319,15 +324,13 @@
     "IsJobClosed": {
       "sql": "IsJobClosed",
       "type": "int",
-      "desc": "Boolean: is the manufacturing job closed? (live only — archive/SideUp hardcode 1)",
+      "desc": "Boolean: is the manufacturing job closed? (live only \u2014 archive/SideUp hardcode 1)",
       "grp": "manufacturing",
       "fo": true
     },
     "MetalAmount": {
       "sql": "MetalAmount",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.TotalMetalAmount,0) + ISNULL(DI.MM_TotalMetalAmount,0))",
       "desc": "Financial value of the precious metal component",
       "grp": "costing",
       "aliases": [
@@ -336,7 +339,7 @@
       ]
     },
     "DiamondAmount": {
-      "sql": "TotalDiamondCost",
+      "sql": "DiamondAmount",
       "type": "decimal",
       "desc": "Financial value of diamonds",
       "grp": "costing",
@@ -347,7 +350,7 @@
       ]
     },
     "ColorStoneAmount": {
-      "sql": "TotalColorStoneCost",
+      "sql": "ColorStoneAmount",
       "type": "decimal",
       "desc": "Financial value of coloured gemstones",
       "grp": "costing",
@@ -362,8 +365,6 @@
     "LabourAmount": {
       "sql": "LabourAmount",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.TotalMakingAmount,0) + ISNULL(DI.TotalDiaSettingCost,0) + ISNULL(DI.TotalCSSettingCost,0) + ISNULL(DI.TotalFindingSettingCost,0) + ISNULL(DI.MM_TotalMakingAmount,0))",
       "desc": "Labour/manufacturing charge for the item",
       "grp": "costing",
       "aliases": [
@@ -376,8 +377,6 @@
     "OtherAmount": {
       "sql": "OtherAmount",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.TotalPriorityChargesAmount,0) + ISNULL(DI.TotalMiscCost,0) + ISNULL(DI.TotalWastageAmount,0) + ISNULL(DI.OtherCharges,0) + ISNULL(DI.TotalDiamondHandling,0))",
       "desc": "Other charges not categorized as metal/diamond/stone/labour",
       "grp": "costing",
       "aliases": [
@@ -408,14 +407,14 @@
       }
     },
     "QCStatusid": {
-      "sql": "Stockmanagement_QCStatusid",
+      "sql": "QCStatusid",
       "type": "int",
       "desc": "Internal QC status ID",
       "grp": "status",
       "fo": true
     },
     "QCStatusname": {
-      "sql": "Stockmanagement_QCStatusname",
+      "sql": "QCStatusname",
       "type": "string",
       "desc": "QC Status",
       "grp": "quality",
@@ -444,14 +443,14 @@
       }
     },
     "producttypeid": {
-      "sql": "MasterManagement_producttypeid",
+      "sql": "producttypeid",
       "type": "int",
       "desc": "Internal product type ID",
       "grp": "product",
       "fo": true
     },
     "producttypename": {
-      "sql": "MasterManagement_producttypename",
+      "sql": "producttypename",
       "type": "string",
       "desc": "Product Type",
       "grp": "product",
@@ -483,7 +482,7 @@
       ]
     },
     "collection": {
-      "sql": "mastermanagement_collectionname",
+      "sql": "collection",
       "type": "string",
       "desc": "Collection",
       "grp": "product",
@@ -495,7 +494,7 @@
       }
     },
     "customerid": {
-      "sql": "usermanagement_customerid",
+      "sql": "customerid",
       "type": "int",
       "desc": "Internal customer ID",
       "grp": "customer",
@@ -510,7 +509,7 @@
       "grp": "manufacturing"
     },
     "netwt": {
-      "sql": "NetWeight",
+      "sql": "netwt",
       "type": "decimal",
       "desc": "Net weight of precious metal after excluding stones (grams)",
       "grp": "metal_weight",
@@ -521,7 +520,7 @@
       ]
     },
     "MetalRate": {
-      "sql": "MetalRate",
+      "sql": "MetalRate24K",
       "type": "decimal",
       "desc": "Per-item metal rate (rate per gram used for this item)",
       "grp": "gold_costing",
@@ -543,7 +542,7 @@
       "grp": "costing"
     },
     "Tunch": {
-      "sql": "metalPriceRatio",
+      "sql": "Tunch",
       "type": "decimal",
       "desc": "Gold purity percentage/fineness measure (maps to metalPriceRatio column)",
       "grp": "gold_costing",
@@ -580,8 +579,6 @@
     "MetalLoss": {
       "sql": "MetalLoss",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.MM_MetalWeightWithLoss,0) - ISNULL(DI.NetWeight,0))",
       "desc": "Calculated metal loss = MetalDiamondWeightWithLoss + MM_MetalWeightWithLoss - NetWeight",
       "grp": "metal_weight",
       "unit": "gms",
@@ -594,8 +591,6 @@
     "NetWtWithLoss": {
       "sql": "NetWtWithLoss",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.MM_MetalWeightWithLoss,0))",
       "desc": "Net metal weight including manufacturing loss = MetalDiamondWeightWithLoss + MM_MetalWeightWithLoss",
       "grp": "metal_weight",
       "unit": "gms",
@@ -614,7 +609,7 @@
     "ArticleMasterCode": {
       "sql": "ArticleMasterCode",
       "type": "string",
-      "desc": "Master article/product code (live/archive only — SideUp hardcodes '')",
+      "desc": "Master article/product code (live/archive only \u2014 SideUp hardcodes '')",
       "grp": "product"
     },
     "IsClub": {
@@ -629,16 +624,12 @@
     "totalLabourAmt": {
       "sql": "totalLabourAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.TotalMakingAmount,0) + ISNULL(DI.TotalDiaSettingCost,0) + ISNULL(DI.TotalCSSettingCost,0) + ISNULL(DI.TotalFindingSettingCost,0) + ISNULL(DI.MM_TotalMakingAmount,0)) - ISNULL(DI.TotalSettingCost,0)",
       "desc": "Total labour = LabourAmount - TotalSettingCost",
       "grp": "costing"
     },
     "totalOtherAmt": {
       "sql": "totalOtherAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(ISNULL(DI.TotalPriorityChargesAmount,0) + ISNULL(DI.TotalMiscCost,0) + ISNULL(DI.TotalWastageAmount,0) + ISNULL(DI.OtherCharges,0))",
       "desc": "Total other = OtherAmount - TotalDiamondHandling",
       "grp": "costing"
     },
@@ -647,23 +638,19 @@
       "type": "string",
       "calc": true,
       "de": "CASE WHEN ISNULL(DI.IsSampleLineJob,0)=1 THEN 'sample line job' WHEN ISNULL(DI.IsSampleLineJob,0)=0 THEN 'Regular Job' ELSE '' END",
-      "desc": "Job classification (sample line job / Regular Job) — derived from IsSampleLineJob",
+      "desc": "Job classification (sample line job / Regular Job) \u2014 derived from IsSampleLineJob",
       "grp": "manufacturing"
     },
     "orderform": {
-      "sql": "b2c_orderno",
+      "sql": "orderform",
       "type": "string",
-      "calc": true,
-      "de": "CASE WHEN ISNULL(DI.b2c_orderno,'')='' AND ISNULL(DI.b2c_orderno_stock,'')='' THEN 'offline order' ELSE 'online order' END",
-      "desc": "Order form type (offline/online) — derived from b2c_orderno and b2c_orderno_stock",
+      "desc": "Order form type (offline/online) \u2014 derived from b2c_orderno and b2c_orderno_stock",
       "grp": "order"
     },
     "Manufacturer": {
-      "sql": "Stock_Suppliercode",
+      "sql": "Manufacturer",
       "type": "string",
-      "calc": true,
-      "de": "CASE WHEN ISNULL(DI.Stock_Contractorcode,'')<>'' THEN DI.Stock_Contractorcode ELSE ISNULL(DI.Stock_Suppliercode,'') END",
-      "desc": "Manufacturer",
+      "desc": "Manufacturer / supplier",
       "grp": "supplier",
       "filter": {
         "match": "exact",
@@ -686,12 +673,10 @@
       }
     },
     "SalesRep": {
-      "sql": "usermanagement_salesrepid",
+      "sql": "SalesRep",
       "type": "string",
-      "calc": true,
-      "de": "ISNULL((SELECT TOP 1 u.customercode FROM {DBNAME}Usermanagement_systemloginmaster u WHERE u.id = DI.usermanagement_salesrepid),'')",
-      "desc": "Sales Rep / Salesperson",
-      "grp": "customer",
+      "desc": "Sales representative code",
+      "grp": "sales",
       "aliases": [
         "sales rep",
         "salesrep",
@@ -709,9 +694,7 @@
     "GoldWt": {
       "sql": "GoldWt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'gold' THEN CONVERT(decimal(38,3),ISNULL(DI.netweight,0)-ISNULL(DI.MM_MetalWeightWithLoss,0)-ISNULL(DI.FindingWtWithLoss,0)) ELSE 0 END)",
-      "desc": "Weight of gold in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of gold in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms",
       "aliases": [
@@ -723,9 +706,7 @@
     "SilverWt": {
       "sql": "SilverWt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'silver' THEN CONVERT(decimal(38,3),ISNULL(DI.netweight,0)-ISNULL(DI.MM_MetalWeightWithLoss,0)-ISNULL(DI.FindingWtWithLoss,0)) ELSE 0 END)",
-      "desc": "Weight of silver in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of silver in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms",
       "not_in_where": true
@@ -733,34 +714,28 @@
     "PlatinumWt": {
       "sql": "PlatinumWt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'platinum' THEN CONVERT(decimal(38,3),ISNULL(DI.netweight,0)-ISNULL(DI.MM_MetalWeightWithLoss,0)-ISNULL(DI.FindingWtWithLoss,0)) ELSE 0 END)",
-      "desc": "Weight of platinum in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of platinum in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms"
     },
     "OtherWt": {
       "sql": "OtherWt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') NOT IN ('gold','silver','platinum') THEN CONVERT(decimal(38,3),ISNULL(DI.netweight,0)-ISNULL(DI.MM_MetalWeightWithLoss,0)-ISNULL(DI.FindingWtWithLoss,0)) ELSE 0 END)",
-      "desc": "Weight of other metals not gold/silver/platinum (grams) — SP fallback approximation",
+      "desc": "Weight of other metals not gold/silver/platinum (grams) \u2014 SP fallback approximation",
       "grp": "metal_weight",
       "unit": "gms"
     },
     "jewellerysize": {
       "sql": "jewellerysize",
       "type": "string",
-      "desc": "Physical size (ring size, bracelet size, necklace length) — not on SideUp table",
+      "desc": "Physical size (ring size, bracelet size, necklace length) \u2014 not on SideUp table",
       "grp": "product",
       "fo": true
     },
     "WastageAmount": {
       "sql": "WastageAmount",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.wastage,0) = 0 THEN 0 ELSE ISNULL(DI.TotalMetalAmount,0) - CONVERT(DECIMAL(38,3), ISNULL(DI.MetalDiamondWeightWithLoss,0) * (ISNULL(DI.MetalRate,0) * (ISNULL(DI.metalPriceRatio,0) / (ISNULL(DI.metalPriceRatio,0) + ISNULL(DI.wastage,0))))) END)",
-      "desc": "Monetary value of manufacturing wastage (note: GetFullReport adds MM_WastageAmount/FindingWastageAmount from subquery — this is the SP fallback)",
+      "desc": "Monetary value of manufacturing wastage (note: GetFullReport adds MM_WastageAmount/FindingWastageAmount from subquery \u2014 this is the SP fallback)",
       "grp": "gold_costing",
       "aliases": [
         "wastage amount"
@@ -770,9 +745,7 @@
     "GoldAmt": {
       "sql": "GoldAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'gold' THEN ISNULL(DI.TotalMetalAmount,0) + ISNULL(DI.MM_TotalMetalAmount,0) ELSE 0 END)",
-      "desc": "Monetary value of gold component — SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of gold component \u2014 SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount",
       "aliases": [
         "gold amount",
@@ -783,63 +756,57 @@
     "SilverAmt": {
       "sql": "SilverAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'silver' THEN ISNULL(DI.TotalMetalAmount,0) + ISNULL(DI.MM_TotalMetalAmount,0) ELSE 0 END)",
-      "desc": "Monetary value of silver component — SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of silver component \u2014 SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount",
       "not_in_where": true
     },
     "PlatinumAmt": {
       "sql": "PlatinumAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'platinum' THEN ISNULL(DI.TotalMetalAmount,0) + ISNULL(DI.MM_TotalMetalAmount,0) ELSE 0 END)",
-      "desc": "Monetary value of platinum component — SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of platinum component \u2014 SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount"
     },
     "OtherAmt": {
       "sql": "OtherAmt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') NOT IN ('gold','silver','platinum') THEN ISNULL(DI.TotalMetalAmount,0) + ISNULL(DI.MM_TotalMetalAmount,0) ELSE 0 END)",
-      "desc": "Monetary value of other metals — SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of other metals \u2014 SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount"
     },
     "Pure_Gold_Wt": {
       "sql": "Pure_Gold_Wt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'gold' THEN (ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.FindingWtWithLoss,0)) * (ISNULL(DI.wastage,0) + ISNULL(DI.metalPriceRatio,0)) / 100 + ISNULL(DI.calculatemetalwtloss,0) ELSE 0 END)",
-      "desc": "Pure-gold equivalent weight (grams) — SP fallback, GetFullReport uses subquery SUM(IIF) aggregates",
+      "desc": "Pure-gold equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery SUM(IIF) aggregates",
       "grp": "pure_metal_weight",
-      "unit": "gms"
+      "unit": "gms",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.Pure_Gold_Wt,0) - ISNULL(DI.MM_Wastage_Gold_Wt,0)"
     },
     "Pure_Silver_Wt": {
       "sql": "Pure_Silver_Wt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'silver' THEN (ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.FindingWtWithLoss,0)) * (ISNULL(DI.wastage,0) + ISNULL(DI.metalPriceRatio,0)) / 100 + ISNULL(DI.calculatemetalwtloss,0) ELSE 0 END)",
-      "desc": "Pure-silver equivalent weight (grams) — SP fallback, GetFullReport uses subquery",
+      "desc": "Pure-silver equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
-      "unit": "gms"
+      "unit": "gms",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.Pure_Silver_Wt,0) - ISNULL(DI.MM_Wastage_Silver_Wt,0)"
     },
     "Pure_Platinum_Wt": {
       "sql": "Pure_Platinum_Wt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') = 'platinum' THEN (ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.FindingWtWithLoss,0)) * (ISNULL(DI.wastage,0) + ISNULL(DI.metalPriceRatio,0)) / 100 + ISNULL(DI.calculatemetalwtloss,0) ELSE 0 END)",
-      "desc": "Pure-platinum equivalent weight (grams) — SP fallback, GetFullReport uses subquery",
+      "desc": "Pure-platinum equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
-      "unit": "gms"
+      "unit": "gms",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.Pure_Platinum_Wt,0) - ISNULL(DI.MM_Wastage_Platinum_Wt,0)"
     },
     "Pure_Other_Wt": {
       "sql": "Pure_Other_Wt",
       "type": "decimal",
-      "calc": true,
-      "me": "(CASE WHEN ISNULL(DI.Metal_Type_Name,'') NOT IN ('gold','silver','platinum') THEN (ISNULL(DI.MetalDiamondWeightWithLoss,0) + ISNULL(DI.FindingWtWithLoss,0)) * (ISNULL(DI.wastage,0) + ISNULL(DI.metalPriceRatio,0)) / 100 + ISNULL(DI.calculatemetalwtloss,0) ELSE 0 END)",
-      "desc": "Purity-adjusted weight of other metals (grams) — SP fallback, GetFullReport uses subquery",
+      "desc": "Purity-adjusted weight of other metals (grams) \u2014 SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
-      "unit": "gms"
+      "unit": "gms",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.Pure_Other_Wt,0) - ISNULL(DI.MM_Wastage_Other_Wt,0)"
     },
     "month": {
       "sql": "",
@@ -866,11 +833,79 @@
     "branch": {
       "sql": "",
       "type": "string",
-      "calc": true,
-      "de": "COALESCE(NULLIF(DI.LocationName,''), 'Unknown')",
       "desc": "Branch / location dimension",
       "grp": "location",
       "not_available": true
+    },
+    "netwt_24k": {
+      "sql": "netwt_24k",
+      "type": "decimal",
+      "desc": "Total pure weight (24k equivalent)",
+      "grp": "weight"
+    },
+    "Wastage_24k": {
+      "sql": "Wastage_24k",
+      "type": "decimal",
+      "desc": "Wastage pure weight",
+      "grp": "weight"
+    },
+    "Actual_NetWt_24K": {
+      "sql": "Actual_NetWt_24K",
+      "type": "decimal",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.netwt_24k,0) - ISNULL(DI.Wastage_24k,0)",
+      "desc": "Actual net weight (24k) = netwt_24k - wastage_24k",
+      "grp": "weight"
+    },
+    "Actual_Metal_Amt": {
+      "sql": "Actual_Metal_Amt",
+      "type": "decimal",
+      "computed": true,
+      "metric_expr": "ISNULL(DI.MetalAmount,0) - ISNULL(DI.WastageAmount,0)",
+      "desc": "Actual metal amount = MetalAmount - WastageAmount",
+      "grp": "amount"
+    },
+    "units_sold": {
+      "sql": "units_sold",
+      "type": "int",
+      "computed": true,
+      "metric_expr": "CASE WHEN ISNULL(DI.IsERPreturn,0)=0 THEN 1 ELSE 0 END",
+      "desc": "Units/pieces sold \u2014 excludes ERP-return rows",
+      "grp": "count"
+    },
+    "Co_DiaPCS": {
+      "sql": "Co_DiaPCS",
+      "type": "int",
+      "desc": "Company diamond pieces",
+      "grp": "diamond",
+      "unit": "pcs"
+    },
+    "Co_DiaWt": {
+      "sql": "Co_DiaWt",
+      "type": "decimal",
+      "desc": "Company diamond carat weight",
+      "grp": "diamond",
+      "unit": "ctw"
+    },
+    "Cu_DiaPCS": {
+      "sql": "Cu_DiaPCS",
+      "type": "int",
+      "desc": "Customer diamond pieces",
+      "grp": "diamond",
+      "unit": "pcs"
+    },
+    "Cu_DiaWt": {
+      "sql": "Cu_DiaWt",
+      "type": "decimal",
+      "desc": "Customer diamond carat weight",
+      "grp": "diamond",
+      "unit": "ctw"
+    },
+    "TotalTax": {
+      "sql": "totaltaxAmount",
+      "type": "decimal",
+      "desc": "Total tax amount",
+      "grp": "amount"
     }
   },
   "special_metrics": {
@@ -880,7 +915,7 @@
       "description": "Total bill/invoice count"
     },
     "unique_customers": {
-      "sql": "usermanagement_customercode",
+      "sql": "CustomerName",
       "type": "count_distinct",
       "description": "Count of unique customers"
     },
@@ -889,6 +924,37 @@
       "type": "count_distinct",
       "description": "Count of unique designs"
     }
+  },
+  "dimension_aliases": {
+    "branch": "Mastermanagement_FG_StockLockername",
+    "locker": "Mastermanagement_FG_StockLockername",
+    "customer": "CustomerFullName",
+    "customer name": "CustomerFullName",
+    "client": "CustomerFullName",
+    "design": "designno",
+    "design no": "designno",
+    "sales rep": "SalesRep",
+    "salesperson": "SalesRep",
+    "category": "categoryname",
+    "sub category": "subcategoryname",
+    "subcategory": "subcategoryname",
+    "metal type": "Metal_Type_Name",
+    "metal": "Metal_Type_Name",
+    "gold type": "goldtypename",
+    "gold colour": "goldcolorname",
+    "gold color": "goldcolorname",
+    "product type": "producttypename",
+    "brand": "mastermanagement_brandname",
+    "supplier": "Manufacturer",
+    "bill": "StockDocumentNo",
+    "invoice": "StockDocumentNo",
+    "bill no": "invn",
+    "invoice no": "invn",
+    "job": "J_Jobno",
+    "job no": "J_Jobno",
+    "jobno": "J_Jobno",
+    "sku": "SKUNO",
+    "barcode": "StockBarcode"
   },
   "filter_key_map": {
     "category": "categoryname",
@@ -939,12 +1005,13 @@
     "designno": "designno",
     "design": "designno",
     "start_date": "_date",
-    "end_date": "_date"
+    "end_date": "_date",
+    "supplier": "Manufacturer"
   },
   "name_filter_map": {
-    "customername": "ISNULL(DI.usermanagement_customercode,'')",
-    "customerfullname": "ISNULL(CONCAT(DI.usermanagement_customerfirstname,' ',DI.usermanagement_customerlastname),'')",
-    "salesrep": "ISNULL(DI.salesrepname,'')"
+    "customername": "ISNULL(DI.CustomerName,'')",
+    "customerfullname": "ISNULL(DI.CustomerFullName,'')",
+    "salesrep": "ISNULL(DI.usermanagement_salesrepcode,'')"
   },
   "metric_catalog": {
     "Amount": {
@@ -1337,19 +1404,176 @@
         "design total",
         "design total amount"
       ]
+    },
+    "netwt_24k": {
+      "type": "weight",
+      "label": "Total pure weight (24k equivalent)"
+    },
+    "Wastage_24k": {
+      "type": "weight",
+      "label": "Wastage pure weight"
+    },
+    "Actual_NetWt_24K": {
+      "type": "weight",
+      "label": "Actual net weight (24k) = netwt_24k - wastage_24k"
+    },
+    "Actual_Metal_Amt": {
+      "type": "amount",
+      "label": "Actual metal amount = MetalAmount - WastageAmount"
+    },
+    "units_sold": {
+      "type": "count",
+      "label": "Units/pieces sold \u2014 excludes ERP-return rows"
+    },
+    "CustomerType": {
+      "type": "customer",
+      "label": "Customer segment / business class",
+      "aliases": []
+    },
+    "Manufacturer": {
+      "type": "supplier",
+      "label": "Manufacturer / supplier",
+      "aliases": []
+    },
+    "SalesRep": {
+      "type": "sales",
+      "label": "Sales representative code",
+      "aliases": []
+    },
+    "Co_DiaPCS": {
+      "type": "count",
+      "label": "Company diamond pieces",
+      "aliases": [
+        "company diamond pieces",
+        "co diamond pieces",
+        "company diamonds",
+        "company diamond count",
+        "co dia pcs"
+      ]
+    },
+    "Co_DiaWt": {
+      "type": "weight",
+      "label": "Company diamond carat weight",
+      "aliases": [
+        "company diamond weight",
+        "co diamond weight",
+        "company diamond ctw",
+        "company diamond carat",
+        "co dia wt"
+      ]
+    },
+    "Cu_DiaPCS": {
+      "type": "count",
+      "label": "Customer diamond pieces",
+      "aliases": [
+        "customer diamond pieces",
+        "cu diamond pieces",
+        "customer diamonds",
+        "customer diamond count",
+        "cu dia pcs"
+      ]
+    },
+    "Cu_DiaWt": {
+      "type": "weight",
+      "label": "Customer diamond carat weight",
+      "aliases": [
+        "customer diamond weight",
+        "cu diamond weight",
+        "customer diamond ctw",
+        "customer diamond carat",
+        "cu dia wt"
+      ]
+    },
+    "TotalTax": {
+      "type": "amount",
+      "label": "Total tax amount",
+      "aliases": []
     }
   },
   "prompt_rules": {
     "special_rules": [
-      "CRITICAL — metric type disambiguation: \"material\"/\"material used\"/\"total material\"→grosswt (WEIGHT, not amount). \"gold amount\"/\"gold value\"→GoldAmt (AMOUNT). \"gold weight\"/\"gold wt\"→GoldWt (WEIGHT). \"diamond\" alone with no amount/weight qualifier→ask clarify. NEVER map material→amount, material→rate, material→GoldAmt. NEVER map gold weight→GoldAmt. NEVER map gold amount→GoldWt.",
-      "\"courier charges\"/\"delivery charges\"/\"shipping\"→OtherAmount, but note in the answer: courier is bundled inside Other Charges which also includes misc, wastage and handling fees — it is not a courier-only figure."
+      "CRITICAL \u2014 metric type disambiguation: \"material\"/\"material used\"/\"total material\"\u2192grosswt (WEIGHT, not amount). \"gold amount\"/\"gold value\"\u2192GoldAmt (AMOUNT). \"gold weight\"/\"gold wt\"\u2192GoldWt (WEIGHT). \"diamond\" alone with no amount/weight qualifier\u2192ask clarify. NEVER map material\u2192amount, material\u2192rate, material\u2192GoldAmt. NEVER map gold weight\u2192GoldAmt. NEVER map gold amount\u2192GoldWt.",
+      "\"courier charges\"/\"delivery charges\"/\"shipping\"\u2192OtherAmount, but note in the answer: courier is bundled inside Other Charges which also includes misc, wastage and handling fees \u2014 it is not a courier-only figure.",
+      "\"company diamond\"/\"co diamond\" = metrics Co_DiaPCS/Co_DiaWt; \"customer diamond\"/\"cu diamond\" = metrics Cu_DiaPCS/Cu_DiaWt. NEVER put 'diamond' into the customer/salesrep filter or a name LIKE clause for these."
     ],
     "negative_examples": [
-      "total tax→TotalTax (NOT GoldAmt, NOT Amount)"
+      "total tax\u2192TotalTax (NOT GoldAmt, NOT Amount)"
     ],
     "excluded_columns": "D_Pcs_Cm, D_Wt_Cm, D_Pcs_Ct, D_Wt_Ct, C_Pcs_Cm, C_Wt_Cm, C_Pcs_Ct, C_Wt_Ct, statusname, Isarchive, IsshowCustomerName, ImgUrl."
   },
   "intents": {
+    "company_diamond_pcs": {
+      "patterns": [
+        "\\bcompany(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
+        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b"
+      ],
+      "metric": "Co_DiaPCS",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Company diamond pieces"
+    },
+    "company_diamond_weight": {
+      "patterns": [
+        "\\bcompany(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
+        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b"
+      ],
+      "metric": "Co_DiaWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "label": "Company diamond weight"
+    },
+    "customer_diamond_pcs": {
+      "patterns": [
+        "\\bcustomer(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
+        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b"
+      ],
+      "metric": "Cu_DiaPCS",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Customer diamond pieces"
+    },
+    "customer_diamond_weight": {
+      "patterns": [
+        "\\bcustomer(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
+        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b"
+      ],
+      "metric": "Cu_DiaWt",
+      "aggregation": "sum",
+      "unit": "weight",
+      "label": "Customer diamond weight"
+    },
+    "diamond_pieces_count": {
+      "patterns": [
+        "\\b(?<!company\\s)(?<!customer\\s)(?<!co\\s)(?<!cu\\s)(?:how\\s+)?diamond\\s+(pieces|items|jewellery|jewelry|pcs|pieces)\\b"
+      ],
+      "metric": "dpcs",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Diamond Pieces Count"
+    },
+    "diamond_ctw": {
+      "patterns": [
+        "\\b(?<!company\\s)(?<!customer\\s)(?<!co\\s)(?<!cu\\s)(?:total\\s+)?diamond\\s*(ctw|carat)\\b"
+      ],
+      "metric": "dctw",
+      "aggregation": "sum",
+      "unit": "weight",
+      "is_field_metric": true,
+      "label": "Total diamond carat weight"
+    },
+    "diamond_amount": {
+      "patterns": [
+        "\\b(total\\s+)?diamond\\s+(amt|amount|value|sales)\\b"
+      ],
+      "metric": "DiamondAmount",
+      "aggregation": "sum",
+      "unit": "currency",
+      "is_field_metric": true,
+      "clear_filters": [
+        "category"
+      ],
+      "label": "Total diamond sales"
+    },
     "max_bill": {
       "patterns": [
         "\\b(biggest\\s+bill|largest\\s+bill|highest\\s+bill|single\\s+bill)\\b"
@@ -1461,15 +1685,6 @@
       "unit": "count",
       "label": "Bill Count"
     },
-    "diamond_pieces_count": {
-      "patterns": [
-        "\\bhow\\s+many\\s+diamond\\s+(pieces|items|jewellery|jewelry)\\b|\\b(total\\s+)?diamond\\s+(pcs|pieces)\\b"
-      ],
-      "metric": "dpcs",
-      "aggregation": "sum",
-      "unit": "count",
-      "label": "Diamond Pieces Count"
-    },
     "gross_weight": {
       "patterns": [
         "\\b(total\\s+)?gross\\s*wt\\b|\\b(total\\s+)?gross\\s+weight\\b|\\b(total\\s+)?grossweight\\b"
@@ -1509,19 +1724,6 @@
       "unit": "currency",
       "is_field_metric": true,
       "label": "Total colourstone sales"
-    },
-    "diamond_amount": {
-      "patterns": [
-        "\\b(total\\s+)?diamond\\s+(amt|amount|value|sales)\\b"
-      ],
-      "metric": "DiamondAmount",
-      "aggregation": "sum",
-      "unit": "currency",
-      "is_field_metric": true,
-      "clear_filters": [
-        "category"
-      ],
-      "label": "Total diamond sales"
     },
     "metal_amount": {
       "patterns": [
@@ -1709,16 +1911,6 @@
       "is_field_metric": true,
       "label": "Total colourstone carat weight"
     },
-    "diamond_ctw": {
-      "patterns": [
-        "\\b(total\\s+)?diamond\\s*(ctw|carat)\\b"
-      ],
-      "metric": "dctw",
-      "aggregation": "sum",
-      "unit": "weight",
-      "is_field_metric": true,
-      "label": "Total diamond carat weight"
-    },
     "misc_pcs_count": {
       "patterns": [
         "\\b(total\\s+)?misc\\s*(pcs|pieces)\\b"
@@ -1808,6 +2000,40 @@
       "unit": "currency",
       "is_field_metric": true,
       "label": "Total handling amount"
+    },
+    "total_tax": {
+      "patterns": [
+        "\\btotal\\s+tax\\b",
+        "\\btax\\s+(amount|value|total)\\b"
+      ],
+      "metric": "TotalTax",
+      "aggregation": "sum",
+      "unit": "currency",
+      "label": "Total tax amount"
+    },
+    "manufacturer_wise_sales": {
+      "patterns": [
+        "\\bmanufacturer\\s+wise\\s+sales\\b",
+        "\\bsupplier\\s+wise\\s+sales\\b",
+        "\\bsales\\s+by\\s+(manufacturer|supplier)\\b"
+      ],
+      "metric": "Amount",
+      "aggregation": "sum",
+      "dimension": "Manufacturer",
+      "unit": "currency",
+      "label": "Manufacturer-wise sales"
+    },
+    "units_sold": {
+      "patterns": [
+        "\\bunits\\s+sold\\b",
+        "\\bpieces\\s+sold\\b",
+        "\\bhow\\s+many\\s+(pieces|units)\\b"
+      ],
+      "metric": "units_sold",
+      "aggregation": "sum",
+      "unit": "count",
+      "label": "Units/pieces sold",
+      "override_metric": true
     }
   },
   "canonical_values": {
@@ -1879,7 +2105,21 @@
     "top branch",
     "best branch",
     "top sales rep",
-    "best sales rep"
+    "best sales rep",
+    "manufacturer",
+    "supplier",
+    "units",
+    "pieces",
+    "total tax",
+    "company diamond",
+    "customer diamond",
+    "customer",
+    "customers",
+    "top customers",
+    "best customers",
+    "biggest customer",
+    "customer wise",
+    "client"
   ],
   "location_aliases": {
     "mumbai": "Mumbai",
@@ -1908,5 +2148,74 @@
     "total bills today",
     "diamond amount this month",
     "gold sales last month"
-  ]
+  ],
+  "source_query_file": "sales_report.sql",
+  "filter_invalid_values": {
+    "customername": [
+      "diamond",
+      "dia",
+      "gold",
+      "silver",
+      "platinum",
+      "jewellery",
+      "jewelry",
+      "metal",
+      "metals",
+      "stone",
+      "stones",
+      "net",
+      "gross",
+      "pure",
+      "weight",
+      "amount",
+      "pieces",
+      "pcs",
+      "sales",
+      "total"
+    ],
+    "customerfullname": [
+      "diamond",
+      "dia",
+      "gold",
+      "silver",
+      "platinum",
+      "jewellery",
+      "jewelry",
+      "metal",
+      "metals",
+      "stone",
+      "stones",
+      "net",
+      "gross",
+      "pure",
+      "weight",
+      "amount",
+      "pieces",
+      "pcs",
+      "sales",
+      "total"
+    ],
+    "salesrep": [
+      "diamond",
+      "dia",
+      "gold",
+      "silver",
+      "platinum",
+      "jewellery",
+      "jewelry",
+      "metal",
+      "metals",
+      "stone",
+      "stones",
+      "net",
+      "gross",
+      "pure",
+      "weight",
+      "amount",
+      "pieces",
+      "pcs",
+      "sales",
+      "total"
+    ]
+  }
 }

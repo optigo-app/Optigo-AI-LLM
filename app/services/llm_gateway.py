@@ -462,13 +462,16 @@ async def _call_anthropic(
         base_url=settings.anthropic_base_url,
         http_client=_get_llm_http_client(timeout=60.0),
     )
+    system_payload: Any = system
+    if settings.prompt_caching and system:
+        system_payload = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
     try:
         response = await _with_retry(
             client.messages.create,
             model=model,
             max_tokens=max_tokens,
             messages=chat_messages,  # type: ignore[arg-type]
-            system=system,
+            system=system_payload,
             temperature=temperature,
         )
     except Exception as exc:

@@ -45,8 +45,13 @@ class PeriodInfo(BaseModel):
 
 class Metadata(BaseModel):
     session_id: Optional[str] = None
+    request_id: Optional[str] = None
     record_count: int = 0
     token_usage: Dict[str, Any] = Field(default_factory=dict)
+    intent_confidence: Optional[float] = None
+    complexity: Optional[str] = None
+    results_limited: bool = False
+    cache_hit: bool = False
 
 
 class Actions(BaseModel):
@@ -201,6 +206,33 @@ class ClarifyBlock(BaseModel):
     suggestions: List[str] = Field(default_factory=list)
 
 
+class DateRangeInputBlock(BaseModel):
+    type: Literal["date_range_input"]
+    title: str = "Select date range"
+    content: str
+    start_field: str = "start_date"
+    end_field: str = "end_date"
+    presets: List[Dict[str, str]] = Field(default_factory=list)
+    submit_label: str = "Apply date range"
+    submit_message_template: str = "Use date range {start_date} to {end_date}"
+
+
+class ChoiceOption(BaseModel):
+    label: str
+    value: str
+    message: str
+
+
+class ChoiceInputBlock(BaseModel):
+    type: Literal["choice_input"]
+    title: str
+    content: str
+    field: str
+    value: str
+    options: List[ChoiceOption] = Field(..., min_length=1)
+    allow_custom: bool = False
+
+
 class SourcesBlock(BaseModel):
     """A list of data sources used to generate the answer."""
     type: Literal["sources"]
@@ -211,7 +243,7 @@ Block = Union[
     TextBlock, HeadingBlock, TableBlock, ListBlock,
     ChartBlock, AssumptionBlock, ErrorBlock, SuggestionsBlock,
     MetricCardBlock, BreakdownBlock, PeriodBlock, GlossaryBlock,
-    ClarifyBlock, SourcesBlock,
+    ClarifyBlock, DateRangeInputBlock, ChoiceInputBlock, SourcesBlock,
 ]
 
 
@@ -260,6 +292,10 @@ class FeedbackRequest(BaseModel):
     company_code: str = ""
     user_id: str = ""
     corrected_metric: str = ""  # user suggests correct metric when down-voting
+    failure_reason: str = ""
+    query_plan: Dict[str, Any] = Field(default_factory=dict)
+    confidence: Optional[float] = None
+    latency_ms: Optional[float] = None
 
 
 class FeedbackResponse(BaseModel):

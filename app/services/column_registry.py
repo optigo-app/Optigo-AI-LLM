@@ -154,7 +154,7 @@ def get_computed_metrics(report_key: str = "sales_report") -> Set[str]:
     columns = report_cfg.get("columns", {})
     return {
         name for name, meta in columns.items()
-        if meta.get("computed") and meta.get("metric_expr") and not meta.get("filter_only")
+        if meta.get("computed") and (meta.get("metric_expr") or meta.get("table_metric_exprs")) and not meta.get("filter_only")
     }
 
 
@@ -174,8 +174,12 @@ def get_valid_base_columns(report_key: str = "sales_report") -> Set[str]:
         if meta.get("filter_only"):
             continue
         if meta.get("computed"):
-            for expr_key in ("dimension_expr", "metric_expr"):
-                expr = meta.get(expr_key, "")
+            expressions = [meta.get("dimension_expr", ""), meta.get("metric_expr", "")]
+            for expr_map_key in ("table_dimension_exprs", "table_metric_exprs"):
+                expr_map = meta.get(expr_map_key, {}) or {}
+                if isinstance(expr_map, dict):
+                    expressions.extend(expr_map.values())
+            for expr in expressions:
                 if expr:
                     for ref in re.findall(r'DI\.(\w+)', expr, re.IGNORECASE):
                         valid.add(ref.lower())
@@ -333,6 +337,75 @@ def get_computed_only_names(report_key: str = "sales_report") -> Set[str]:
     return result
 
 
+def get_dimension_aliases(report_key: str) -> Dict[str, str]:
+    """Natural-language alias -> column key for GROUP BY dimensions.
+
+    The LLM often emits friendly names (``branch``, ``customer``) instead of
+    the configured column key (``Mastermanagement_FG_StockLockername``,
+    ``Job_customerfirmname``). Configured per report as
+    ``"dimension_aliases": {"branch": "..."}``; keys are matched
+    case-insensitively.
+    """
+    report_cfg = _REGISTRY.get(report_key, {})
+    aliases = report_cfg.get("dimension_aliases", {}) or {}
+    return {str(k).lower(): str(v) for k, v in aliases.items()}
+
+
+def get_filter_invalid_values(report_key: str, field: str) -> Set[str]:
+    """Values that must never be accepted for a filter key (lowercased set).
+
+    Merges, for the key and its filter_key_map target:
+    - top-level ``filter_invalid_values`` config (covers name_filter_map keys
+      that are not real columns, e.g. ``customername``)
+    - ``columns[<col>].filter.invalid_values`` and ``columns[<col>].invalid_values``
+    """
+    report_cfg = _REGISTRY.get(report_key, {})
+    filter_key_map = report_cfg.get("filter_key_map", {})
+    columns = report_cfg.get("columns", {})
+    fiv = report_cfg.get("filter_invalid_values", {})
+    target = filter_key_map.get(field.lower(), field) if isinstance(field, str) else field
+
+    values: Set[str] = set()
+    for key in (field, target):
+        values.update(str(v).lower() for v in fiv.get(key, []) or [])
+        col = columns.get(key) or {}
+        f = col.get("filter") or {}
+        values.update(str(v).lower() for v in f.get("invalid_values") or [])
+        values.update(str(v).lower() for v in col.get("invalid_values") or [])
+    return values
+
+
+def get_invalid_value_columns(report_key: str) -> Dict[str, Set[str]]:
+    """``{di_column_lower: set(invalid literals)}`` for ai_where cleanup.
+
+    Maps every DI.<column> that can appear in a generated WHERE clause to the
+    literals that are not legal filter values for it — built from
+    name_filter_map expressions (with their filter_invalid_values entries) and
+    physical/computed column sql names.
+    """
+    report_cfg = _REGISTRY.get(report_key, {})
+    name_filter_map = report_cfg.get("name_filter_map", {})
+    columns = report_cfg.get("columns", {})
+
+    out: Dict[str, Set[str]] = {}
+
+    def _add(col_name: str, values) -> None:
+        vals = {str(v).lower() for v in values or []}
+        if vals:
+            out.setdefault(col_name.lower(), set()).update(vals)
+
+    for key, expr in name_filter_map.items():
+        invalid = get_filter_invalid_values(report_key, key)
+        for ref in re.findall(r"DI\.(\w+)", expr or "", re.IGNORECASE):
+            _add(ref, invalid)
+
+    for cname, meta in columns.items():
+        invalid = get_filter_invalid_values(report_key, cname)
+        _add(meta.get("sql") or cname, invalid)
+
+    return out
+
+
 def derive_filter_schema(report_key: str) -> Dict[str, Dict[str, Any]]:
     """Auto-derive a filter_schema from report_columns.json.
 
@@ -364,16 +437,13 @@ def derive_filter_schema(report_key: str) -> Dict[str, Dict[str, Any]]:
         "description": "ISO date (YYYY-MM-DD). Filters up to this date.",
     }
 
-    # Derive filters from filter_key_map
-    seen_targets: Set[str] = set()
+    # Derive filters from filter_key_map. Multiple aliases may point to the
+    # same governed target (for example supplier -> Manufacturer), and each
+    # alias must remain a valid public filter key.
     for alias, target in filter_key_map.items():
         # Skip internal mapping targets
         if target in ("_date", "_name_filter"):
             continue
-        # Skip if we already added this target column (avoid duplicates)
-        if target in seen_targets:
-            continue
-        seen_targets.add(target)
 
         # Look up the target column in the columns registry
         col_meta = columns.get(target, {})

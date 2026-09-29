@@ -349,7 +349,7 @@ def _keyword_classify(
             continue
         score = 0
         for keyword in keywords:
-            if keyword in lowered:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', lowered):
                 # Longer keyword matches are weighted slightly higher to avoid generic words.
                 score += len(keyword.split())
         if score > best_score:

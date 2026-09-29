@@ -1,0 +1,382 @@
+{
+  "report_key": "sales_report",
+  "periods": {
+    "all": {},
+    "today": {
+      "start_date": "2026-09-29",
+      "end_date": "2026-09-29"
+    }
+  },
+  "metrics": [
+    {
+      "name": "grosswt",
+      "label": "Total Gross Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 72543.131,
+        "today": 115.6
+      }
+    },
+    {
+      "name": "netwt",
+      "label": "Total Net Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 68391.9,
+        "today": 98.8
+      }
+    },
+    {
+      "name": "GoldWt",
+      "label": "Total Gold Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 59301.094,
+        "today": 96.8
+      }
+    },
+    {
+      "name": "SilverWt",
+      "label": "Total Silver Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 7956.198,
+        "today": 2.0
+      }
+    },
+    {
+      "name": "PlatinumWt",
+      "label": "Total Platinum Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 383.161,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "OtherWt",
+      "label": "Total Other Metal Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 756.447,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "netwt_24k",
+      "label": "Total Pure Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 60680.438,
+        "today": 76.793
+      }
+    },
+    {
+      "name": "Pure_Gold_Wt",
+      "label": "Gold Pure Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 55744.39,
+        "today": 75.763
+      }
+    },
+    {
+      "name": "Pure_Silver_Wt",
+      "label": "Silver Pure Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": -364.071,
+        "today": 1.85
+      }
+    },
+    {
+      "name": "Pure_Platinum_Wt",
+      "label": "Platinum Pure Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": -1165.525,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "Pure_Other_Wt",
+      "label": "Other M. Pure Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 186.964,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "dpcs",
+      "label": "Total Dia. Pcs",
+      "aggregation": "sum",
+      "expected": {
+        "all": 27817.0,
+        "today": 14.0
+      }
+    },
+    {
+      "name": "dctw",
+      "label": "Total Dia. Ctw",
+      "aggregation": "sum",
+      "expected": {
+        "all": 7876.212,
+        "today": 20.0
+      }
+    },
+    {
+      "name": "cspcs",
+      "label": "Total CS Pcs",
+      "aggregation": "sum",
+      "expected": {
+        "all": 5369.0,
+        "today": 3.0
+      }
+    },
+    {
+      "name": "csctw",
+      "label": "Total CS Ctw",
+      "aggregation": "sum",
+      "expected": {
+        "all": 3915.522,
+        "today": 4.0
+      }
+    },
+    {
+      "name": "miscpcs",
+      "label": "Total Misc Pcs",
+      "aggregation": "sum",
+      "expected": {
+        "all": 5490.0,
+        "today": 4.0
+      }
+    },
+    {
+      "name": "miscwt",
+      "label": "Total Misc Wt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 2707.44,
+        "today": 12.0
+      }
+    },
+    {
+      "name": "unique_designs",
+      "label": "Unique Designs",
+      "aggregation": "count_distinct",
+      "expected": {
+        "all": 1809.0,
+        "today": 5.0
+      }
+    },
+    {
+      "name": "unique_customers",
+      "label": "Unique Customers",
+      "aggregation": "count_distinct",
+      "expected": {
+        "all": 126.0,
+        "today": 2.0
+      }
+    },
+    {
+      "name": "MetalAmount",
+      "label": "Total Metal Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 2694234453.94,
+        "today": 968800.25
+      }
+    },
+    {
+      "name": "GoldAmt",
+      "label": "Total Gold Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 2687530284.9,
+        "today": 924455.01
+      }
+    },
+    {
+      "name": "SilverAmt",
+      "label": "Total Silver Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 2880405.3,
+        "today": 44345.24
+      }
+    },
+    {
+      "name": "PlatinumAmt",
+      "label": "Total Platinum Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 1935667.41,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "OtherAmt",
+      "label": "Total Other M. Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 1895037.32,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "DiamondAmount",
+      "label": "Total Dia. Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 544336595.4,
+        "today": 3000.0
+      }
+    },
+    {
+      "name": "ColorStoneAmount",
+      "label": "Total CS Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 4388791.56,
+        "today": 20.0
+      }
+    },
+    {
+      "name": "LabourAmount",
+      "label": "Total Labour Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 12857941.88,
+        "today": 236541.27
+      }
+    },
+    {
+      "name": "OtherAmount",
+      "label": "Total Other Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 1809420.28,
+        "today": 1140.0
+      }
+    },
+    {
+      "name": "TotalSettingCost",
+      "label": "Setting Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 4380.0,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "TotalDiamondHandling",
+      "label": "Handling Amt.",
+      "aggregation": "sum",
+      "expected": {
+        "all": 34830.83,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "Wastage_24k",
+      "label": "Wastage (Pure)",
+      "aggregation": "sum",
+      "expected": {
+        "all": 598.228,
+        "today": 1.0
+      }
+    },
+    {
+      "name": "WastageAmount",
+      "label": "Wastage Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": -11724848.63,
+        "today": 15337.9
+      }
+    },
+    {
+      "name": "Amount",
+      "label": "Total Amount",
+      "aggregation": "sum",
+      "expected": {
+        "all": 3280676405.39,
+        "today": 1178382.75
+      }
+    },
+    {
+      "name": "Co_DiaPCS",
+      "label": "Co_DiaPCS",
+      "aggregation": "sum",
+      "expected": {
+        "all": 27407.0,
+        "today": 14.0
+      }
+    },
+    {
+      "name": "Co_DiaWt",
+      "label": "Co_DiaWt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 7570.0,
+        "today": 20.0
+      }
+    },
+    {
+      "name": "Cu_DiaPCS",
+      "label": "Cu_DiaPCS",
+      "aggregation": "sum",
+      "expected": {
+        "all": 410.0,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "Cu_DiaWt",
+      "label": "Cu_DiaWt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 306.0,
+        "today": 0.0
+      }
+    },
+    {
+      "name": "Actual_NetWt_24K",
+      "label": "T. Act. Net Wt(24k)",
+      "aggregation": "sum",
+      "expected": {
+        "all": 60082.21,
+        "today": 75.793
+      }
+    },
+    {
+      "name": "Actual_Metal_Amt",
+      "label": "T. Act. Metal Amt",
+      "aggregation": "sum",
+      "expected": {
+        "all": 2705959302.57,
+        "today": 953462.35
+      }
+    },
+    {
+      "name": "units_sold",
+      "label": "Units/Pieces",
+      "aggregation": "sum",
+      "expected": {
+        "all": null,
+        "today": null
+      }
+    },
+    {
+      "name": "total_count",
+      "label": "Bill Count",
+      "aggregation": "sum",
+      "expected": {
+        "all": null,
+        "today": null
+      }
+    }
+  ],
+  "note": "Expected values from report UI run on 2026-09-29. units_sold/total_count not shown in UI (left null)."
+}

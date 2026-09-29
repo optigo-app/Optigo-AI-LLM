@@ -17,6 +17,7 @@ import unittest
 
 from app.models import (
     MetricCardBlock, BreakdownBlock, PeriodBlock, GlossaryBlock,
+    DateRangeInputBlock, ChoiceInputBlock,
 )
 from app.services.formatters import (
     format_currency, format_currency_dual, format_weight,
@@ -214,6 +215,18 @@ class BlockModelValidationTests(unittest.TestCase):
         b = PeriodBlock(type="period", value="2026-09-01 to 2026-09-15")
         self.assertEqual(b.value, "2026-09-01 to 2026-09-15")
 
+    def test_choice_input_block(self):
+        raw = block_builder.build_entity_choice_block("ThGems", "What does ThGems refer to?")
+        block = ChoiceInputBlock(**raw)
+        self.assertEqual(block.field, "entity_type")
+        self.assertEqual(block.options[0].message, "Customer: ThGems")
+
+    def test_date_range_input_block(self):
+        raw = block_builder.build_date_range_input_block("Select another range")
+        block = DateRangeInputBlock(**raw)
+        self.assertEqual(block.start_field, "start_date")
+        self.assertEqual(block.submit_label, "Apply date range")
+
     def test_glossary_block(self):
         b = GlossaryBlock(type="glossary", terms={"ct": "Carat", "g": "Gram"})
         self.assertEqual(b.terms["ct"], "Carat")
@@ -368,9 +381,13 @@ class NoDataBlocksTests(unittest.TestCase):
         )
         types = [b.get("type") for b in blocks]
         self.assertIn("period", types)
+        self.assertIn("date_range_input", types)
         period = next(b for b in blocks if b.get("type") == "period")
         self.assertEqual(period["label"], "Date Range")
         self.assertEqual(period["value"], "2026-09-01 to 2026-09-15")
+        picker = DateRangeInputBlock(**next(b for b in blocks if b.get("type") == "date_range_input"))
+        self.assertEqual(picker.start_field, "start_date")
+        self.assertEqual(picker.end_field, "end_date")
 
     def test_no_period_block_without_filters(self):
         blocks = block_builder.build_no_data_blocks(

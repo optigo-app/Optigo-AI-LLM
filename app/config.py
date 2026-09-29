@@ -30,9 +30,14 @@ class Settings(BaseSettings):
     # Operational constants
     llm_safe_row_limit: int = 50
     grid_row_limit: int = 500
+    breakdown_row_limit: int = 100
     cache_similarity_threshold: float = 0.93
     cache_ttl_seconds: int = 3600
+    cache_schema_version: str = "v2"
     classifier_similarity_threshold: float = 0.60
+    retrieval_top_k: int = 5
+    retrieval_rerank: bool = False
+    prompt_caching: bool = False
 
     # Security
     auth_required: bool = True

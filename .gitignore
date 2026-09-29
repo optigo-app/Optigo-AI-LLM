@@ -25,6 +25,8 @@ exports/
 *.db-wal
 *.log
 *.csv
+*.sql
+*.txt
 
 # Test / tool caches
 .pytest_cache/

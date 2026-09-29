@@ -10,10 +10,54 @@ from typing import Any, Dict, List, Optional
 
 from app.services.intent import IntentSpec
 from app.services.column_registry import _REGISTRY as _COLUMN_REGISTRY
+from app.services.column_registry import (
+    get_filter_invalid_values,
+    get_invalid_value_columns,
+)
 from app.services.catalog_builder import _get_cached_valid_columns
 from app.services.metric_validator import get_metric_unit, get_metric_unit_label
 
 logger = logging.getLogger(__name__)
+
+
+def expand_computed_where_refs(ai_where: str, report_key: str = "sales_report") -> str:
+    """Rewrite ``DI.<computed-column>`` references inside a WHERE clause.
+
+    The LLM sometimes emits filters on computed output columns (e.g.
+    ``DI.SoldPending = 'pending'``). Those names don't exist as physical
+    columns, so we substitute the column's configured ``dimension_expr``
+    (falling back to ``metric_expr``) wrapped in parentheses. Columns marked
+    ``not_in_where``/``computed_only`` are never expanded — they stay as refs
+    and get rejected by the caller's validation pass.
+    """
+    if not ai_where:
+        return ai_where
+    columns = _COLUMN_REGISTRY.get(report_key, {}).get("columns", {})
+    if not columns:
+        return ai_where
+    from app.services.column_registry import get_computed_only_names
+    computed_only = {n.lower() for n in get_computed_only_names(report_key)}
+    name_map = {name.lower(): meta for name, meta in columns.items()}
+
+    for _ in range(5):  # bounded: expressions may nest other computed refs
+        refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)
+        rewritten = False
+        for ref in refs:
+            key = ref.lower()
+            if key in computed_only:
+                continue
+            meta = name_map.get(key)
+            if meta and meta.get("computed"):
+                expr = meta.get("dimension_expr") or meta.get("metric_expr") or ""
+                if expr:
+                    ai_where = re.sub(
+                        r'\bDI\.' + re.escape(ref) + r'\b',
+                        f"({expr})", ai_where, flags=re.IGNORECASE,
+                    )
+                    rewritten = True
+        if not rewritten:
+            break
+    return ai_where
 
 
 def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
@@ -43,7 +87,45 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
         )
         return ""
 
-    # Guard 2: Validate all DI.<column> references against the column registry
+    # Guard 2a: expand DI.<computed-column> refs into their configured expressions
+    ai_where = expand_computed_where_refs(ai_where, report_key)
+
+    # Guard 2b: drop AND-ed clauses whose literal is a declared-invalid filter
+    # value for the DI column they reference (e.g. the LLM leaks a metric word
+    # like 'diamond' into a CustomerName LIKE clause).
+    invalid_cols = get_invalid_value_columns(report_key)
+    if invalid_cols:
+        kept = []
+        dropped_any = False
+        for clause in re.split(r"\s+AND\s+", ai_where, flags=re.IGNORECASE):
+            clause = clause.strip()
+            if not clause:
+                continue
+            refs = {r.lower() for r in re.findall(r"DI\.(\w+)", clause, re.IGNORECASE)}
+            literals = [
+                re.sub(r"%", "", lit).replace("''", "'").strip().lower()
+                for lit in re.findall(r"'((?:''|[^'])*)'", clause)
+            ]
+            drop = False
+            for ref in refs:
+                invalid = invalid_cols.get(ref)
+                if invalid and any(lit in invalid for lit in literals):
+                    drop = True
+                    break
+            if drop:
+                dropped_any = True
+                logger.warning(
+                    "ai_where validation: dropping clause with invalid value "
+                    "for DI column: %s", clause[:100]
+                )
+            else:
+                kept.append(clause)
+        if dropped_any:
+            ai_where = " AND ".join(kept)
+            if not ai_where:
+                return ""
+
+    # Guard 2c: Validate all DI.<column> references against the column registry
     valid_cols = _get_cached_valid_columns(report_key)
     refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)
 
@@ -73,6 +155,9 @@ class ParseResult:
         self.ai_where: Optional[str] = data.get("ai_where")
         self.clarify: Optional[str] = data.get("clarify")
         self.extra_metrics: List[str] = data.get("extra_metrics", []) or []
+        self.intent: Optional[str] = data.get("intent")
+        self.confidence: float = max(0.0, min(1.0, float(data.get("confidence", 0.8) or 0.8)))
+        self.alternatives: List[Dict[str, Any]] = data.get("alternatives", []) or []
         self.raw: Dict[str, Any] = data
 
     def to_intent_spec(self) -> IntentSpec:
@@ -88,7 +173,7 @@ class ParseResult:
         if metric in _FILTER_ONLY:
             metric = "Amount"
         spec = IntentSpec(report_key=self.report_key)
-        spec.intent = f"semantic_{metric}"
+        spec.intent = self.intent or f"semantic_{metric}"
         spec.metric_key = metric
         spec.aggregation = self.aggregation
         spec.dimension = self.dimension or ""
@@ -184,6 +269,18 @@ class ParseResult:
         for fname, fval in self.filters.items():
             col_expr = _NAME_FILTERS.get(fname.lower())
             if col_expr:
+                fkey = fname.lower()
+                # Resolve invalid values against the alias AND its name_filter_map target
+                invalid = get_filter_invalid_values(self.report_key, fkey)
+                for alias, target in filter_key_map.items():
+                    if name_filter_map.get(target) == col_expr:
+                        invalid |= get_filter_invalid_values(self.report_key, target)
+                if str(fval).lower().strip() in invalid:
+                    logger.warning(
+                        "generate_where_clause: dropping %s filter — '%s' is not a valid value",
+                        fname, fval
+                    )
+                    continue
                 safe_val = str(fval).replace("'", "''")
                 clauses.append(f"{col_expr} LIKE '%{safe_val}%'")
 
@@ -196,6 +293,12 @@ class ParseResult:
         if clauses:
             return " AND ".join(clauses)
         return ""
+
+    def to_query_plan(self, question: str = ""):
+        from app.services.query_plan import QueryPlan
+        plan = QueryPlan.from_parse_result(self)
+        plan.classify_complexity(question)
+        return plan
 
     def __repr__(self) -> str:
         return (f"ParseResult(report={self.report_key}, metric={self.metric}, "

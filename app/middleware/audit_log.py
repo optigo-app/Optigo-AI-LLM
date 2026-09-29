@@ -217,6 +217,30 @@ def log_sql_execution(
 
 # ── Convenience context manager for timing ──
 
+def log_request_trace(
+    *,
+    request_id: str,
+    intent: str,
+    confidence: float,
+    query_plan: Optional[Dict[str, Any]] = None,
+    stage_latencies: Optional[Dict[str, float]] = None,
+    result_count: int = 0,
+    cache_hit: bool = False,
+    failure_stage: str = "",
+) -> None:
+    _write_entry({
+        "event": "request_trace",
+        "request_id": request_id,
+        "intent": intent,
+        "confidence": round(confidence, 4),
+        "query_plan": query_plan or {},
+        "stage_latencies": stage_latencies or {},
+        "result_count": result_count,
+        "cache_hit": cache_hit,
+        "failure_stage": failure_stage,
+    })
+
+
 class AuditTimer:
     """Simple timer for measuring latency in audit log entries."""
 

@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -92,31 +93,43 @@ def _resolve_dimension(report_key: str, value: str) -> str:
     return ""
 
 
-def _resolve_filter_column(report_key: str, chatbot_key: str) -> str:
-    """Translate a chatbot filter key to the actual SQL column name.
-
-    Returns empty string if not registered.
-    """
+def _resolve_filter_target(report_key: str, chatbot_key: str) -> Tuple[str, Dict[str, Any]]:
+    """Translate a chatbot filter key to its report column name and metadata."""
     report_cols = _get_report_columns(report_key)
     columns = report_cols.get("columns", {})
 
     # Load filter_key_map from report_columns.json (config-driven, not hardcoded)
     filter_key_map: Dict[str, str] = report_cols.get("filter_key_map", {})
+    name_filter_map: Dict[str, str] = report_cols.get("name_filter_map", {})
 
     # Map chatbot key to report column name (case-insensitive)
     report_col_name = filter_key_map.get(chatbot_key.lower(), chatbot_key)
-    if report_col_name == "_date":
-        return "_date"  # handled separately
-    if report_col_name == "_name_filter":
-        return "_name_filter"  # handled by ai_where, not FilterHeader
+    if report_col_name in ("_date", "_name_filter"):
+        return report_col_name, {}
+    if any(report_col_name.lower() == name.lower() for name in name_filter_map):
+        return "_name_filter", {}
 
-    # Look up in column registry
     if report_col_name in columns:
-        return columns[report_col_name]["sql"]
+        return report_col_name, columns[report_col_name]
+
+    for column_name, column_meta in columns.items():
+        if column_name.lower() == report_col_name.lower():
+            return column_name, column_meta
 
     logger.warning("Rejected filter column %r (key=%r) not in registry for %s",
                    report_col_name, chatbot_key, report_key)
-    return ""
+    return "", {}
+
+
+def _resolve_filter_column(report_key: str, chatbot_key: str) -> str:
+    """Translate a chatbot filter key to the actual SQL column name.
+
+    Returns empty string if not registered.
+    """
+    report_col_name, col_meta = _resolve_filter_target(report_key, chatbot_key)
+    if report_col_name in ("_date", "_name_filter"):
+        return report_col_name
+    return col_meta.get("sql", "") if col_meta else ""
 
 
 # Allowed aggregation functions
@@ -177,6 +190,38 @@ def _sanitize_filter_value(value: str) -> str:
             logger.warning("Filter value rejected — contains keyword %s: %r", kw, value[:100])
             return ""
     return v.strip()
+
+
+def _computed_filter_clause(report_key: str, expression: str, values: List[str], match: str = "exact", allow_subquery: bool = False) -> str:
+    """Build a safe AIWhere clause for a computed string dimension.
+
+    Computed dimensions such as Manufacturer have business logic that cannot be
+    represented by FilterHeader/FilterValue (contractor code with supplier-code
+    fallback). The expression comes only from trusted report configuration;
+    values are sanitized by _sanitize_filter_value before reaching this helper.
+    """
+    if not expression or not values:
+        return ""
+    unsafe = r'\b(DROP|DELETE|INSERT|UPDATE|EXEC|EXECUTE|XP_CMDSHELL|ALTER|CREATE|GRANT|TRUNCATE|MERGE)\b|;|--|/\*|\*/'
+    if not allow_subquery:
+        unsafe = r'\bSELECT\b|' + unsafe
+    if re.search(unsafe, expression, re.IGNORECASE):
+        logger.warning("Rejected computed filter expression — unsafe SQL: %s", expression[:120])
+        return ""
+
+    from app.services.column_registry import get_valid_base_columns
+    valid_cols = get_valid_base_columns(report_key)
+    refs = re.findall(r'DI\.(\w+)', expression, re.IGNORECASE)
+    if any(ref.lower() not in valid_cols for ref in refs):
+        logger.warning("Rejected computed filter expression — invalid DI reference: %s", expression[:120])
+        return ""
+
+    if match == "like":
+        clauses = [f"({expression}) LIKE '%{value}%'" for value in values]
+        return "(" + " OR ".join(clauses) + ")"
+
+    quoted = ", ".join(f"'{value}'" for value in values)
+    return f"({expression}) IN ({quoted})"
 
 
 # SP mapping loaded dynamically from report_columns.json (sp, report_id, default_metric, default_dimension)
@@ -248,6 +293,23 @@ def _build_p(
     report_tables: List[str] = report_cfg.get("tables", []) or []
     report_base_filter: str = report_cfg.get("base_filter", "") or ""
 
+    # Optional generated source query: the legacy SP's row-producing SELECT.
+    # When present, the shared SP wraps it as FROM (<SourceQuery>) AS DI and
+    # ignores the configured table list.  No DB objects are needed in tenant DBs.
+    source_query = ""
+    source_query_file = report_cfg.get("source_query_file")
+    if source_query_file:
+        sq_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "app"
+            / "report_queries"
+            / source_query_file
+        )
+        if sq_path.exists():
+            source_query = sq_path.read_text(encoding="utf-8").strip()
+        else:
+            logger.warning("source_query_file not found: %s", sq_path)
+
     # ── Resolve report aliases ──
     # Python builds the full SQL expression for both computed and non-computed metrics.
     # The SP uses MetricExpr directly (no IF/ELSE mapping needed).
@@ -291,7 +353,13 @@ def _build_p(
         # Exception: computed metrics carry their own expression (e.g.
         # CASE WHEN status IN (1,12) THEN 1 ELSE 0 END) which must be SUMmed,
         # not COUNT(*)ed — forcing count would return the raw row count.
-        if cat_type == "count" and raw_agg_check != "count" and not is_computed_metric:
+        if (
+            cat_type == "count"
+            and raw_agg_check != "count"
+            and not is_computed_metric
+            and raw_metric in special
+            and special.get(raw_metric, {}).get("type") == "count"
+        ):
             logger.warning(
                 "Layer 3: metric %r is type=count but aggregation=%s — forcing count",
                 raw_metric, raw_agg_check,
@@ -324,6 +392,14 @@ def _build_p(
             reason=f"metric {raw_metric} not in metric_catalog, columns, or special_metrics — fell back to default",
         )
 
+    table_metric_exprs: Dict[str, str] = {}
+    if raw_metric in report_cols:
+        configured_exprs = report_cols[raw_metric].get("table_metric_exprs", {}) or {}
+        table_metric_exprs = {
+            table: _xml_escape(expression) for table, expression in configured_exprs.items()
+            if table in report_tables and isinstance(expression, str) and expression.strip()
+        }
+
     # Build MetricExpr: the full SQL expression the SP plugs into SUM/AVG/etc.
     if raw_metric in report_cols and report_cols[raw_metric].get("computed"):
         # Computed metric: use metric_expr, or fall back to dimension_expr for computed dimensions
@@ -350,6 +426,13 @@ def _build_p(
 
     # Build DimensionExpr: the full SQL expression for GROUP BY
     raw_dim = getattr(intent_spec, "dimension", "") or ""
+    table_dimension_exprs: Dict[str, str] = {}
+    if raw_dim in report_cols:
+        configured_exprs = report_cols[raw_dim].get("table_dimension_exprs", {}) or {}
+        table_dimension_exprs = {
+            table: _xml_escape(expression) for table, expression in configured_exprs.items()
+            if table in report_tables and isinstance(expression, str) and expression.strip()
+        }
     if raw_dim in report_cols and report_cols[raw_dim].get("computed"):
         # Computed dimension: use dimension_expr directly
         dimension_expr = report_cols[raw_dim].get("dimension_expr", "")
@@ -373,7 +456,7 @@ def _build_p(
             dimension = ""
             dimension_expr = ""
     # Guard 3: If dimension was set to a computed metric (has metric_expr but no dimension_expr), clear it
-    if raw_dim in report_cols and report_cols[raw_dim].get("computed") and not report_cols[raw_dim].get("dimension_expr"):
+    if raw_dim in report_cols and report_cols[raw_dim].get("computed") and not (report_cols[raw_dim].get("dimension_expr") or report_cols[raw_dim].get("table_dimension_exprs")):
         logger.warning("dimension '%s' is a computed metric without dimension_expr — clearing", raw_dim)
         dimension = ""
         dimension_expr = ""
@@ -398,6 +481,8 @@ def _build_p(
         # Validate DI.<column> references against registry
         if ai_where_clause:
             from app.services.column_registry import get_valid_base_columns
+            from app.services.parse_result import expand_computed_where_refs
+            ai_where_clause = expand_computed_where_refs(ai_where_clause, report_key)
             valid_cols = get_valid_base_columns(report_key)
             refs = re.findall(r'DI\.(\w+)', ai_where_clause, re.IGNORECASE)
             for ref in refs:
@@ -406,37 +491,46 @@ def _build_p(
                     ai_where_clause = ""
                     break
 
+    table_dimension_filters: Dict[str, str] = {}
     p_obj: Dict[str, Any] = {
         "ReportId": report_id,
         "IsMaster": 0,
         "Mode": "GetLLMChatSummary",
         "MetricKey": metric_key,
-        "MetricExpr": metric_expr,
+        "MetricExpr": _xml_escape(metric_expr),
         "Aggregation": aggregation,
         "Dimension": dimension,
-        "DimensionExpr": dimension_expr,
+        "DimensionExpr": _xml_escape(dimension_expr),
         "SortDirection": sort_direction,
         "Limit": limit,
-        "AIWhereClause": _xml_escape(ai_where_clause),
+        "AIWhereClause": "",
         "FilterHeader": "",
         "FilterValue": "",
         "FilterStartDate": "",
         "FilterEndDate": "",
         # Report metadata for the shared LLM-chat SP (DynamicReport_LLMChatbeta).
-        # table names are config-sourced (trusted); validated again SP-side.
-        # BaseFilter is XML-escaped because the API gateway parses p as XML
-        # and BaseFilter may contain <> operators (e.g. StockDocumentNo <> '').
+        # Table names are config-sourced (trusted); validated again SP-side.
+        # SQL expression fields are XML-escaped because the API gateway parses
+        # p as XML and expressions may contain <> or & operators.
         "Tables": report_tables,
+        "SourceQuery": _xml_escape(source_query) if source_query else "",
         "BaseFilter": _xml_escape(report_base_filter),
         # Date column used by the shared SP for FilterStartDate/FilterEndDate
         # (defaults to entrydate; reports like order_report use jobdate).
         "DateColumn": report_cfg.get("date_column") or "entrydate",
-        "TableFilters": report_cfg.get("table_filters", {}) or {},
+        "TableFilters": {
+            table: _xml_escape(expression)
+            for table, expression in (report_cfg.get("table_filters", {}) or {}).items()
+            if isinstance(expression, str) and expression.strip()
+        },
+        "TableMetricExprs": table_metric_exprs,
+        "TableDimensionExprs": table_dimension_exprs,
     }
 
     # ── Build filters with sanitization ──
     filter_headers: List[str] = []
     filter_values: List[str] = []
+    computed_filter_clauses: List[str] = []
 
     for key, value in validated_filters.items():
         if value is None or value == "":
@@ -455,28 +549,62 @@ def _build_p(
                 p_obj["FilterEndDate"] = date_val
             continue
 
-        # Resolve chatbot filter key to actual SQL column name via registry
-        col_name = _resolve_filter_column(report_key, key)
-        if not col_name or col_name in ("_date", "_name_filter"):
+        report_col_name, col_meta = _resolve_filter_target(report_key, key)
+        if not report_col_name or report_col_name in ("_date", "_name_filter"):
             continue  # rejected, date, or name-based (handled by ai_where)
 
-        # Sanitize filter values
-        if isinstance(value, list):
-            sanitized_vals = [_sanitize_filter_value(str(v)) for v in value]
-            sanitized_vals = [v for v in sanitized_vals if v]
-            if not sanitized_vals:
-                continue
-            filter_headers.append(col_name)
-            filter_values.append(",".join(sanitized_vals))
-        else:
-            sanitized = _sanitize_filter_value(str(value))
-            if not sanitized:
-                continue
-            filter_headers.append(col_name)
-            filter_values.append(sanitized)
+        raw_values = value if isinstance(value, list) else [value]
+        sanitized_vals = [_sanitize_filter_value(str(v)) for v in raw_values]
+        sanitized_vals = [v for v in sanitized_vals if v]
+        if not sanitized_vals:
+            continue
 
+        if col_meta.get("computed"):
+            filter_meta = col_meta.get("filter", {}) if isinstance(col_meta.get("filter"), dict) else {}
+            configured_table_exprs = col_meta.get("table_dimension_exprs", {}) or {}
+            if configured_table_exprs:
+                for table in report_tables:
+                    expression = configured_table_exprs.get(table, "")
+                    clause = _computed_filter_clause(
+                        report_key,
+                        expression,
+                        sanitized_vals,
+                        filter_meta.get("match", "exact"),
+                        allow_subquery=True,
+                    )
+                    if clause:
+                        table_dimension_filters[table] = clause
+                    else:
+                        logger.warning("Skipped computed filter %r for table %r — no safe filter expression", report_col_name, table)
+            else:
+                clause = _computed_filter_clause(
+                    report_key,
+                    col_meta.get("dimension_expr", ""),
+                    sanitized_vals,
+                    filter_meta.get("match", "exact"),
+                )
+                if clause:
+                    computed_filter_clauses.append(clause)
+                else:
+                    logger.warning("Skipped computed filter %r — no safe filter expression", report_col_name)
+            continue
+
+        col_name = col_meta.get("sql", "")
+        if not col_name:
+            continue
+        filter_headers.append(col_name)
+        filter_values.append(",".join(sanitized_vals))
+
+    if computed_filter_clauses:
+        generated_where = " AND ".join(f"({clause})" for clause in computed_filter_clauses)
+        ai_where_clause = f"({ai_where_clause}) AND {generated_where}" if ai_where_clause else generated_where
+
+    p_obj["AIWhereClause"] = _xml_escape(ai_where_clause)
     p_obj["FilterHeader"] = "#".join(filter_headers)
-    p_obj["FilterValue"] = "#".join(filter_values)
+    p_obj["FilterValue"] = _xml_escape("#".join(filter_values))
+    p_obj["TableDimensionFilters"] = {
+        table: _xml_escape(clause) for table, clause in table_dimension_filters.items()
+    }
 
     return json.dumps(p_obj, separators=(",", ":"))
 

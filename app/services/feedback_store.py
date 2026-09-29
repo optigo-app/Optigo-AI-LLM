@@ -11,8 +11,10 @@ Schema:
     rating: "up" (correct/helpful) or "down" (wrong/unhelpful)
 """
 
+import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +23,10 @@ from typing import Any, Dict, List, Optional
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _LOG_DIR = _PROJECT_ROOT / "logs"
 _table_ready = False
+_FAILURE_REASONS = {
+    "wrong_intent", "wrong_filter", "wrong_date", "wrong_data", "incomplete_result",
+    "wrong_business_definition", "slow_response", "irrelevant_answer",
+}
 
 
 def _db_path() -> str:
@@ -28,12 +34,20 @@ def _db_path() -> str:
     return str(_LOG_DIR / "feedback.db")
 
 
-def _get_conn() -> sqlite3.Connection:
-    """Open a SQLite connection with WAL mode and a busy timeout for concurrency."""
+@contextmanager
+def _get_conn():
+    """Open a SQLite connection with WAL mode and close it after each operation."""
     conn = sqlite3.connect(_db_path(), timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _ensure_table() -> None:
@@ -56,6 +70,10 @@ def _ensure_table() -> None:
                 user_id TEXT NOT NULL DEFAULT '',
                 question_hash TEXT NOT NULL DEFAULT '',
                 corrected_metric TEXT NOT NULL DEFAULT '',
+                failure_reason TEXT NOT NULL DEFAULT '',
+                query_plan TEXT NOT NULL DEFAULT '{}',
+                confidence REAL,
+                latency_ms REAL,
                 created_at TEXT NOT NULL
             )
             """
@@ -70,10 +88,18 @@ def _ensure_table() -> None:
             "CREATE INDEX IF NOT EXISTS idx_feedback_session ON feedback (session_id)"
         )
         # Add corrected_metric column if upgrading from older schema
-        try:
-            conn.execute("ALTER TABLE feedback ADD COLUMN corrected_metric TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass  # column already exists
+        migrations = (
+            "ALTER TABLE feedback ADD COLUMN corrected_metric TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE feedback ADD COLUMN failure_reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE feedback ADD COLUMN query_plan TEXT NOT NULL DEFAULT '{}'",
+            "ALTER TABLE feedback ADD COLUMN confidence REAL",
+            "ALTER TABLE feedback ADD COLUMN latency_ms REAL",
+        )
+        for statement in migrations:
+            try:
+                conn.execute(statement)
+            except sqlite3.OperationalError:
+                pass
     _table_ready = True
 
 
@@ -95,6 +121,10 @@ def add_feedback(
     company_code: str = "",
     user_id: str = "",
     corrected_metric: str = "",
+    failure_reason: str = "",
+    query_plan: Optional[Dict[str, Any]] = None,
+    confidence: Optional[float] = None,
+    latency_ms: Optional[float] = None,
 ) -> int:
     """Store a feedback entry. Returns the row id.
 
@@ -104,6 +134,8 @@ def add_feedback(
     """
     if rating not in ("up", "down"):
         raise ValueError(f"rating must be 'up' or 'down', got: {rating!r}")
+    if failure_reason and failure_reason not in _FAILURE_REASONS:
+        raise ValueError(f"unsupported failure_reason: {failure_reason!r}")
 
     _ensure_table()
     qhash = _hash_question(question)
@@ -114,13 +146,19 @@ def add_feedback(
             """
             INSERT INTO feedback
                 (session_id, question, answer, report_key, metric, rating,
-                 comment, company_code, user_id, question_hash, corrected_metric, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 comment, company_code, user_id, question_hash, corrected_metric,
+                 failure_reason, query_plan, confidence, latency_ms, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (session_id, question, answer, report_key, metric, rating,
-             comment, company_code, user_id, qhash, corrected_metric, now),
+             comment, company_code, user_id, qhash, corrected_metric,
+             failure_reason, json.dumps(query_plan or {}, default=str), confidence, latency_ms, now),
         )
-        return cur.lastrowid or 0
+        feedback_id = cur.lastrowid or 0
+    if rating == "up" and query_plan:
+        from app.services.verified_queries import upsert_candidate
+        upsert_candidate(question, report_key, query_plan)
+    return feedback_id
 
 
 def get_feedback_stats(
