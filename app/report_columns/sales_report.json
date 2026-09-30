@@ -1,5 +1,5 @@
 {
-  "description": "Sales invoice detail report \u2014 revenue, metals, diamonds, weights, categories, customers, sales reps",
+  "description": "Sales invoice detail report — revenue, metals, diamonds, weights, categories, customers, sales reps",
   "sp": 240,
   "report_id": 19,
   "default_metric": "Amount",
@@ -112,6 +112,15 @@
         ]
       }
     },
+    "CustomerIdentity": {
+      "sql": "CustomerName",
+      "type": "string",
+      "calc": true,
+      "de": "ISNULL(DI.CustomerName,'') + CASE WHEN LTRIM(RTRIM(ISNULL(DI.CustomerFullName,''))) <> '' THEN ' - ' + LTRIM(RTRIM(DI.CustomerFullName)) ELSE '' END",
+      "desc": "Customer",
+      "grp": "customer",
+      "not_in_where": true
+    },
     "categoryname": {
       "sql": "categoryname",
       "type": "string",
@@ -172,7 +181,7 @@
     "serialjobno": {
       "sql": "StockBarcode",
       "type": "string",
-      "desc": "Serial job number \u2014 same as StockBarcode, not a separate column",
+      "desc": "Serial job number — same as StockBarcode, not a separate column",
       "grp": "manufacturing"
     },
     "jobno_excel": {
@@ -180,7 +189,7 @@
       "type": "string",
       "calc": true,
       "de": "REPLACE(ISNULL(DI.StockBarcode,''),'_','')",
-      "desc": "Job number from Excel \u2014 derived as StockBarcode with underscores removed",
+      "desc": "Job number from Excel — derived as StockBarcode with underscores removed",
       "grp": "manufacturing"
     },
     "SKUNO": {
@@ -324,7 +333,7 @@
     "IsJobClosed": {
       "sql": "IsJobClosed",
       "type": "int",
-      "desc": "Boolean: is the manufacturing job closed? (live only \u2014 archive/SideUp hardcode 1)",
+      "desc": "Boolean: is the manufacturing job closed? (live only — archive/SideUp hardcode 1)",
       "grp": "manufacturing",
       "fo": true
     },
@@ -609,7 +618,7 @@
     "ArticleMasterCode": {
       "sql": "ArticleMasterCode",
       "type": "string",
-      "desc": "Master article/product code (live/archive only \u2014 SideUp hardcodes '')",
+      "desc": "Master article/product code (live/archive only — SideUp hardcodes '')",
       "grp": "product"
     },
     "IsClub": {
@@ -638,13 +647,13 @@
       "type": "string",
       "calc": true,
       "de": "CASE WHEN ISNULL(DI.IsSampleLineJob,0)=1 THEN 'sample line job' WHEN ISNULL(DI.IsSampleLineJob,0)=0 THEN 'Regular Job' ELSE '' END",
-      "desc": "Job classification (sample line job / Regular Job) \u2014 derived from IsSampleLineJob",
+      "desc": "Job classification (sample line job / Regular Job) — derived from IsSampleLineJob",
       "grp": "manufacturing"
     },
     "orderform": {
       "sql": "orderform",
       "type": "string",
-      "desc": "Order form type (offline/online) \u2014 derived from b2c_orderno and b2c_orderno_stock",
+      "desc": "Order form type (offline/online) — derived from b2c_orderno and b2c_orderno_stock",
       "grp": "order"
     },
     "Manufacturer": {
@@ -656,6 +665,8 @@
         "match": "exact",
         "aliases": [
           "manufacturer",
+          "manufacture",
+          "mfg",
           "supplier"
         ]
       }
@@ -694,7 +705,7 @@
     "GoldWt": {
       "sql": "GoldWt",
       "type": "decimal",
-      "desc": "Weight of gold in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of gold in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms",
       "aliases": [
@@ -706,7 +717,7 @@
     "SilverWt": {
       "sql": "SilverWt",
       "type": "decimal",
-      "desc": "Weight of silver in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of silver in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms",
       "not_in_where": true
@@ -714,28 +725,28 @@
     "PlatinumWt": {
       "sql": "PlatinumWt",
       "type": "decimal",
-      "desc": "Weight of platinum in the item (grams) \u2014 SP fallback approximation, GetFullReport uses subquery",
+      "desc": "Weight of platinum in the item (grams) — SP fallback approximation, GetFullReport uses subquery",
       "grp": "metal_weight",
       "unit": "gms"
     },
     "OtherWt": {
       "sql": "OtherWt",
       "type": "decimal",
-      "desc": "Weight of other metals not gold/silver/platinum (grams) \u2014 SP fallback approximation",
+      "desc": "Weight of other metals not gold/silver/platinum (grams) — SP fallback approximation",
       "grp": "metal_weight",
       "unit": "gms"
     },
     "jewellerysize": {
       "sql": "jewellerysize",
       "type": "string",
-      "desc": "Physical size (ring size, bracelet size, necklace length) \u2014 not on SideUp table",
+      "desc": "Physical size (ring size, bracelet size, necklace length) — not on SideUp table",
       "grp": "product",
       "fo": true
     },
     "WastageAmount": {
       "sql": "WastageAmount",
       "type": "decimal",
-      "desc": "Monetary value of manufacturing wastage (note: GetFullReport adds MM_WastageAmount/FindingWastageAmount from subquery \u2014 this is the SP fallback)",
+      "desc": "Monetary value of manufacturing wastage (note: GetFullReport adds MM_WastageAmount/FindingWastageAmount from subquery — this is the SP fallback)",
       "grp": "gold_costing",
       "aliases": [
         "wastage amount"
@@ -745,7 +756,7 @@
     "GoldAmt": {
       "sql": "GoldAmt",
       "type": "decimal",
-      "desc": "Monetary value of gold component \u2014 SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of gold component — SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount",
       "aliases": [
         "gold amount",
@@ -756,26 +767,26 @@
     "SilverAmt": {
       "sql": "SilverAmt",
       "type": "decimal",
-      "desc": "Monetary value of silver component \u2014 SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of silver component — SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount",
       "not_in_where": true
     },
     "PlatinumAmt": {
       "sql": "PlatinumAmt",
       "type": "decimal",
-      "desc": "Monetary value of platinum component \u2014 SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of platinum component — SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount"
     },
     "OtherAmt": {
       "sql": "OtherAmt",
       "type": "decimal",
-      "desc": "Monetary value of other metals \u2014 SP fallback, GetFullReport uses subquery amounts",
+      "desc": "Monetary value of other metals — SP fallback, GetFullReport uses subquery amounts",
       "grp": "metal_amount"
     },
     "Pure_Gold_Wt": {
       "sql": "Pure_Gold_Wt",
       "type": "decimal",
-      "desc": "Pure-gold equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery SUM(IIF) aggregates",
+      "desc": "Pure-gold equivalent weight (grams) — SP fallback, GetFullReport uses subquery SUM(IIF) aggregates",
       "grp": "pure_metal_weight",
       "unit": "gms",
       "computed": true,
@@ -784,7 +795,7 @@
     "Pure_Silver_Wt": {
       "sql": "Pure_Silver_Wt",
       "type": "decimal",
-      "desc": "Pure-silver equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery",
+      "desc": "Pure-silver equivalent weight (grams) — SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
       "unit": "gms",
       "computed": true,
@@ -793,7 +804,7 @@
     "Pure_Platinum_Wt": {
       "sql": "Pure_Platinum_Wt",
       "type": "decimal",
-      "desc": "Pure-platinum equivalent weight (grams) \u2014 SP fallback, GetFullReport uses subquery",
+      "desc": "Pure-platinum equivalent weight (grams) — SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
       "unit": "gms",
       "computed": true,
@@ -802,7 +813,7 @@
     "Pure_Other_Wt": {
       "sql": "Pure_Other_Wt",
       "type": "decimal",
-      "desc": "Purity-adjusted weight of other metals (grams) \u2014 SP fallback, GetFullReport uses subquery",
+      "desc": "Purity-adjusted weight of other metals (grams) — SP fallback, GetFullReport uses subquery",
       "grp": "pure_metal_weight",
       "unit": "gms",
       "computed": true,
@@ -841,13 +852,15 @@
       "sql": "netwt_24k",
       "type": "decimal",
       "desc": "Total pure weight (24k equivalent)",
-      "grp": "weight"
+      "grp": "weight",
+      "unit": "gms"
     },
     "Wastage_24k": {
       "sql": "Wastage_24k",
       "type": "decimal",
       "desc": "Wastage pure weight",
-      "grp": "weight"
+      "grp": "weight",
+      "unit": "gms"
     },
     "Actual_NetWt_24K": {
       "sql": "Actual_NetWt_24K",
@@ -855,7 +868,8 @@
       "computed": true,
       "metric_expr": "ISNULL(DI.netwt_24k,0) - ISNULL(DI.Wastage_24k,0)",
       "desc": "Actual net weight (24k) = netwt_24k - wastage_24k",
-      "grp": "weight"
+      "grp": "weight",
+      "unit": "gms"
     },
     "Actual_Metal_Amt": {
       "sql": "Actual_Metal_Amt",
@@ -870,7 +884,7 @@
       "type": "int",
       "computed": true,
       "metric_expr": "CASE WHEN ISNULL(DI.IsERPreturn,0)=0 THEN 1 ELSE 0 END",
-      "desc": "Units/pieces sold \u2014 excludes ERP-return rows",
+      "desc": "Units/pieces sold — excludes ERP-return rows",
       "grp": "count"
     },
     "Co_DiaPCS": {
@@ -906,6 +920,14 @@
       "type": "decimal",
       "desc": "Total tax amount",
       "grp": "amount"
+    },
+    "week": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), YEAR(DI.EntryDate)) + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, DI.EntryDate)), 2)",
+      "desc": "Week (ISO)",
+      "grp": "date"
     }
   },
   "special_metrics": {
@@ -930,6 +952,7 @@
     "locker": "Mastermanagement_FG_StockLockername",
     "customer": "CustomerFullName",
     "customer name": "CustomerFullName",
+    "customer identity": "CustomerIdentity",
     "client": "CustomerFullName",
     "design": "designno",
     "design no": "designno",
@@ -970,6 +993,8 @@
     "brand": "mastermanagement_brandname",
     "mastermanagement_brandname": "mastermanagement_brandname",
     "manufacturer": "Manufacturer",
+    "manufacture": "Manufacturer",
+    "mfg": "Manufacturer",
     "product_type": "producttypename",
     "producttypename": "producttypename",
     "qcstatusname": "QCStatusname",
@@ -1025,7 +1050,9 @@
         "revenue",
         "total sales",
         "job total amount",
-        "total business"
+        "total business",
+        "business",
+        "turnover"
       ]
     },
     "MetalAmount": {
@@ -1423,7 +1450,7 @@
     },
     "units_sold": {
       "type": "count",
-      "label": "Units/pieces sold \u2014 excludes ERP-return rows"
+      "label": "Units/pieces sold — excludes ERP-return rows"
     },
     "CustomerType": {
       "type": "customer",
@@ -1492,12 +1519,12 @@
   },
   "prompt_rules": {
     "special_rules": [
-      "CRITICAL \u2014 metric type disambiguation: \"material\"/\"material used\"/\"total material\"\u2192grosswt (WEIGHT, not amount). \"gold amount\"/\"gold value\"\u2192GoldAmt (AMOUNT). \"gold weight\"/\"gold wt\"\u2192GoldWt (WEIGHT). \"diamond\" alone with no amount/weight qualifier\u2192ask clarify. NEVER map material\u2192amount, material\u2192rate, material\u2192GoldAmt. NEVER map gold weight\u2192GoldAmt. NEVER map gold amount\u2192GoldWt.",
-      "\"courier charges\"/\"delivery charges\"/\"shipping\"\u2192OtherAmount, but note in the answer: courier is bundled inside Other Charges which also includes misc, wastage and handling fees \u2014 it is not a courier-only figure.",
+      "CRITICAL — metric type disambiguation: \"material\"/\"material used\"/\"total material\"→grosswt (WEIGHT, not amount). \"gold amount\"/\"gold value\"→GoldAmt (AMOUNT). \"gold weight\"/\"gold wt\"→GoldWt (WEIGHT). \"diamond\" alone with no amount/weight qualifier→ask clarify. NEVER map material→amount, material→rate, material→GoldAmt. NEVER map gold weight→GoldAmt. NEVER map gold amount→GoldWt.",
+      "\"courier charges\"/\"delivery charges\"/\"shipping\"→OtherAmount, but note in the answer: courier is bundled inside Other Charges which also includes misc, wastage and handling fees — it is not a courier-only figure.",
       "\"company diamond\"/\"co diamond\" = metrics Co_DiaPCS/Co_DiaWt; \"customer diamond\"/\"cu diamond\" = metrics Cu_DiaPCS/Cu_DiaWt. NEVER put 'diamond' into the customer/salesrep filter or a name LIKE clause for these."
     ],
     "negative_examples": [
-      "total tax\u2192TotalTax (NOT GoldAmt, NOT Amount)"
+      "total tax→TotalTax (NOT GoldAmt, NOT Amount)"
     ],
     "excluded_columns": "D_Pcs_Cm, D_Wt_Cm, D_Pcs_Ct, D_Wt_Ct, C_Pcs_Cm, C_Wt_Cm, C_Pcs_Ct, C_Wt_Ct, statusname, Isarchive, IsshowCustomerName, ImgUrl."
   },
@@ -2064,6 +2091,8 @@
     "sales",
     "sell",
     "revenue",
+    "business",
+    "turnover",
     "invoice",
     "billing",
     "sold",

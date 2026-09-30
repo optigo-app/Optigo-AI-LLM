@@ -1,5 +1,5 @@
 {
-  "description": "Order report \u2014 job orders with quotation details, weights, amounts, and order status",
+  "description": "Order report — job orders with quotation details, weights, amounts, and order status",
   "sp": 245,
   "report_id": 22,
   "default_metric": "Amount",
@@ -647,6 +647,14 @@
         "rem jobs",
         "pending jobs"
       ]
+    },
+    "week": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), YEAR(DI.jobdate)) + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, DI.jobdate)), 2)",
+      "desc": "Week (ISO)",
+      "grp": "date"
     }
   },
   "special_metrics": {

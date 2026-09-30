@@ -45,11 +45,12 @@ def export_db(db_path: str, out_root: str) -> int:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     db_name = os.path.splitext(os.path.basename(db_path))[0]
-    # Use the full relative dir path so two DBs with the same filename
-    # (e.g. cache_data/cache.db vs scripts/cache_data/cache.db) don't collide.
-    rel_dir = os.path.dirname(db_path).replace("/", os.sep).replace("\\", os.sep)
-    out_dir = os.path.join(out_root, rel_dir, db_name) if rel_dir else os.path.join(out_root, db_name)
-    os.makedirs(out_dir, exist_ok=True)
+    # Flat output: all CSVs in one folder. The db name (+ parent dir when
+    # needed for uniqueness) is embedded in the filename so every file is
+    # self-identifying, e.g. cache_data_cache__chat_messages.csv
+    rel_dir = os.path.dirname(db_path).replace("/", "_").replace("\\", "_").replace(".", "")
+    prefix = f"{rel_dir}_{db_name}" if rel_dir else db_name
+    os.makedirs(out_root, exist_ok=True)
 
     total = 0
     for table in list_tables(con):
@@ -57,7 +58,7 @@ def export_db(db_path: str, out_root: str) -> int:
         cols = rows[0].keys() if rows else [
             d[1] for d in con.execute('PRAGMA table_info("%s")' % table)
         ]
-        csv_path = os.path.join(out_dir, "%s.csv" % table)
+        csv_path = os.path.join(out_root, "%s__%s.csv" % (prefix, table))
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(list(cols))

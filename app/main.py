@@ -1,3 +1,4 @@
+import re
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
@@ -297,65 +298,6 @@ async def get_report_data_v1(report_key: str, request: Request) -> Dict[str, Any
     return await get_report_data(report_key, request)
 
 
-# Base terms that indicate a filterable field or date range is being mentioned.
-# Value-specific terms (branch names, categories, brands, etc.) are derived
-# dynamically from each report's canonical_values + location_aliases below.
-_BASE_FILTER_TERMS = {
-    "branch", "location", "head office", "warehouse",
-    "customer", "supplier", "party", "vendor",
-    "brand", "metal", "gold", "silver", "platinum", "diamond", "22k", "18k", "14k",
-    "category", "subcategory", "retail", "distributor", "wholesale",
-    "sales rep", "salesperson", "representative", "employee",
-    "2024", "2025", "2026", "january", "february", "march", "april",
-    "may", "june", "july", "august", "september", "october", "november", "december",
-    "this month", "last month", "this year", "last year", "this week", "last week",
-    "today", "yesterday",
-}
-
-
-def _build_filter_keywords() -> set:
-    """Aggregate filter-indicating terms from all report configs.
-
-    Pulls every canonical_values alias and location_aliases key across all
-    registered reports so new branches/categories/brands are recognised as
-    filter mentions without editing this list. Falls back to the static base
-    set if the registry is unavailable.
-    """
-    terms = set(_BASE_FILTER_TERMS)
-    try:
-        from app.services.column_registry import _load_registry
-        for report_cfg in _load_registry().values():
-            for field_map in (report_cfg.get("canonical_values") or {}).values():
-                if isinstance(field_map, dict):
-                    terms.update(k.lower() for k in field_map.keys() if k)
-            for alias in (report_cfg.get("location_aliases") or {}).keys():
-                if alias:
-                    terms.add(alias.lower())
-    except Exception:
-        pass
-    return terms
-
-
-# Keywords that indicate the user is mentioning a specific filter value.
-# If none of these appear, we can skip the LLM filter extraction call.
-_FILTER_KEYWORDS = _build_filter_keywords()
-
-
-def _can_skip_filter_extraction(question: str, report_key: str) -> bool:
-    """Check if the LLM filter extraction can be skipped.
-
-    Returns True when the question doesn't mention any filter-related keywords,
-    meaning the LLM call would return empty filters anyway.
-    """
-    lowered = question.lower()
-    # If any filter keyword is mentioned, we need the LLM to extract the value
-    for kw in _FILTER_KEYWORDS:
-        if kw in lowered:
-            return False
-    # No filter keywords found — skip the LLM call
-    return True
-
-
 _CHAT_RESPONSE_EXCLUDE = {
     "report_key", "answer_text", "assumptions",
     "download_url", "token_usage", "session_id",
@@ -477,6 +419,8 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         )
 
     token_usage_calls: List[Dict[str, int]] = []
+    from app.services.pipeline_trace import StageTracer
+    tracer = StageTracer(getattr(request.state, "request_id", ""))
     history = conversation_store.get_messages(session_id, limit=10)
 
     # Use authenticated identity from middleware (cookie) with body as fallback for dev mode
@@ -492,9 +436,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
     # Resolve follow-up questions using conversation history.
     # Fresh questions pass through unchanged (zero latency). Follow-ups are
     # rewritten into standalone questions so the parser sees full context.
+    tracer.start("context")
     resolved_question = await resolve_context(
         body.question, history, token_usage=token_usage_calls,
     )
+    tracer.end("context", detail=resolved_question if resolved_question != body.question else "pass-through")
 
     # External-market detection: when the question references market/industry
     # information, the governed pipeline still answers the internal side and we
@@ -546,6 +492,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
 
     from app.services.query_planner import plan_query
     last_intent = conversation_store.get_last_intent(session_id)
+    tracer.start("semantic_parse")
     try:
         planning = await plan_query(
             resolved_question, history=history, token_usage=token_usage_calls,
@@ -554,7 +501,10 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             registry=_REPORT_REGISTRY,
             fallback_report=last_intent.get("report_key", ""),
         )
+        tracer.end("semantic_parse",
+                   detail=f"{planning.parsed.report_key}/{planning.parsed.metric} conf={planning.parsed.confidence}")
     except ValueError as exc:
+        tracer.end("semantic_parse", outcome="error", detail=str(exc))
         logger.warning("Query planning failed: %s", exc)
         msg = "I couldn't safely validate that query. Please specify the report and metric."
         return ChatResponse(error=msg, session_id=session_id)
@@ -565,6 +515,32 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
     validated_filters = planning.validated_filters
     ai_where = planning.ai_where
     routing_source = planning.routing_source
+
+    # "details / list / breakup" on a count-style metric — the user wants the
+    # entities themselves (which customers/designs/bills), not the count again.
+    if (
+        not parsed.dimension
+        and re.search(r"\b(details?|breakup|breakdown|list)\b", resolved_question.lower())
+    ):
+        from app.services.column_registry import get_detail_dimension, get_default_metric
+        _detail_dim = get_detail_dimension(report_key, parsed.metric)
+        if _detail_dim:
+            parsed.dimension = _detail_dim
+            intent_spec.dimension = _detail_dim
+            # "Detail" of a unique-count metric should show a real value per
+            # entity (e.g. sales) — a bare row count adds no information.
+            _default_metric = get_default_metric(report_key)
+            if _default_metric:
+                parsed.metric = _default_metric
+                intent_spec.metric_key = _default_metric
+                parsed.aggregation = "sum"
+                intent_spec.aggregation = "sum"
+            else:
+                # count_distinct with a dimension is not supported by the SP.
+                parsed.aggregation = "count"
+                intent_spec.aggregation = "count"
+            parsed.limit = max(parsed.limit or 0, 50)
+            intent_spec.limit = parsed.limit
 
     entry = _REPORT_REGISTRY.get(report_key)
     if entry is None:
@@ -686,6 +662,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
 
     # 5. Permission check is delegated to the Node API via company_code + user_id.
     # 6. Call report API (real API or dummy DB depending on config)
+    tracer.start("execute")
     try:
         if settings.use_real_api:
             from app.services.real_api_client import call_real_report_api, get_report_sp_map
@@ -719,7 +696,9 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 user_id,
                 _REPORT_REGISTRY,
             )
+        tracer.end("execute", detail=f"rows={_record_count(data) if isinstance(data, dict) else '?'}")
     except ReportApiError as exc:
+        tracer.end("execute", outcome="error", detail=f"api_status={exc.status_code}")
         log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.error("Report API error: status=%s body=%s", exc.status_code, exc.body[:300])
         msg = "Unable to fetch report data. Please try again."
@@ -728,6 +707,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 blocks=[{"type": "error", "content": msg}])
         return ChatResponse(report_key=report_key, error=msg)
     except RealApiError as exc:
+        tracer.end("execute", outcome="error", detail=f"api_status={exc.status_code}")
         log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.error("Real API error: status=%s body=%s", exc.status_code, exc.body[:300])
         msg = "Unable to fetch report data. Please try again."
@@ -736,6 +716,7 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 blocks=[{"type": "error", "content": msg}])
         return ChatResponse(report_key=report_key, error=msg)
     except Exception as exc:
+        tracer.end("execute", outcome="error", detail=str(exc)[:150])
         log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
         logger.exception("Report API call failed: %s", exc)
         msg = "Unable to reach the report service. Please try again."
@@ -905,8 +886,12 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         log_request_trace(
             request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
             confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            stage_latencies=tracer.latencies,
             result_count=record_count, cache_hit=False,
+            failure_stage=tracer.failure_stage,
         )
+        tracer.emit(question=resolved_question, status="success", report_key=report_key,
+                    extra={"path": "multi_metric"})
         return response
 
     # ── Growth/comparison support: detect "growth %" or "compared with previous" ──
@@ -1034,8 +1019,12 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 log_request_trace(
                     request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
                     confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+                    stage_latencies=tracer.latencies,
                     result_count=record_count, cache_hit=False,
+                    failure_stage=tracer.failure_stage,
                 )
+                tracer.emit(question=resolved_question, status="success", report_key=report_key,
+                            extra={"path": "comparison"})
                 return response
             except Exception as exc:
                 logger.warning("Growth comparison failed: %s", exc)
@@ -1131,13 +1120,17 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                     log_request_trace(
                         request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
                         confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+                        stage_latencies=tracer.latencies,
                         result_count=record_count, cache_hit=False,
                     )
+                    tracer.emit(question=resolved_question, status="success", report_key=report_key,
+                                extra={"path": "multi_period"})
                     return response
         except Exception as exc:
             logger.warning("Multi-period query failed: %s", exc)
             # fall through to normal single-period answer
 
+    tracer.start("answer")
     try:
         answer = await generate_answer(
             data,
@@ -1149,8 +1142,11 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             intent_spec=intent_spec,
             response_mode=response_mode,
         )
+        tracer.end("answer")
     except Exception as exc:
-        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), result_count=_record_count(data), failure_stage="answer_generation")
+        tracer.end("answer", outcome="error", detail=str(exc)[:150])
+        tracer.emit(question=resolved_question, status="error", report_key=report_key)
+        log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), stage_latencies=tracer.latencies, result_count=_record_count(data), failure_stage="answer_generation")
         LLM_CALLS.labels(provider="unknown", tier="cheap", status="error").inc()
         logger.exception("Answer generation failed: %s", exc)
         msg = "Something went wrong generating this response. Please try again."
@@ -1331,9 +1327,12 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         intent=query_plan.intent,
         confidence=query_plan.confidence,
         query_plan=query_plan.model_dump(mode="json"),
+        stage_latencies=tracer.latencies,
         result_count=record_count,
         cache_hit=False,
+        failure_stage=tracer.failure_stage,
     )
+    tracer.emit(question=resolved_question, status="success", report_key=report_key)
     return response
 
 
@@ -1414,6 +1413,8 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         from app.services.answer_generator import generate_answer
 
         token_usage_calls: List[Dict[str, int]] = []
+        from app.services.pipeline_trace import StageTracer
+        tracer = StageTracer(getattr(request.state, "request_id", ""))
         history = conversation_store.get_messages(session_id, limit=10)
 
         # Send session_id first
@@ -1424,9 +1425,11 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         #    WHERE clause generation ──
 
         # Resolve follow-up questions using conversation history
+        tracer.start("context")
         resolved_question = await resolve_context(
             body.question, history, token_usage=token_usage_calls,
         )
+        tracer.end("context", detail=resolved_question if resolved_question != body.question else "pass-through")
 
         from app.services.market_context import (
             build_market_note, detect_market_context, load_market_snapshot,
@@ -1436,6 +1439,7 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
 
         from app.services.query_planner import plan_query
         last_intent = conversation_store.get_last_intent(session_id)
+        tracer.start("semantic_parse")
         try:
             planning = await plan_query(
                 resolved_question, history=history, token_usage=token_usage_calls,
@@ -1444,7 +1448,11 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                 registry=_REPORT_REGISTRY,
                 fallback_report=last_intent.get("report_key", ""),
             )
+            tracer.end("semantic_parse",
+                       detail=f"{planning.parsed.report_key}/{planning.parsed.metric} conf={planning.parsed.confidence}")
         except ValueError as exc:
+            tracer.end("semantic_parse", outcome="error", detail=str(exc))
+            tracer.emit(question=body.question, status="error")
             logger.warning("Stream query planning failed: %s", exc)
             yield f'data: {_json.dumps({"error": "Unable to validate that query safely."})}\n\n'
             return
@@ -1454,6 +1462,32 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         intent_spec = planning.intent_spec
         validated_filters = planning.validated_filters
         ai_where = planning.ai_where
+
+        # "details / list / breakup" on a count-style metric — show entities.
+        if (
+            not parsed.dimension
+            and re.search(r"\b(details?|breakup|breakdown|list)\b", resolved_question.lower())
+        ):
+            from app.services.column_registry import get_detail_dimension, get_default_metric
+            _detail_dim = get_detail_dimension(report_key, parsed.metric)
+            if _detail_dim:
+                parsed.dimension = _detail_dim
+                intent_spec.dimension = _detail_dim
+                # "Detail" of a unique-count metric should show a real value
+                # per entity (e.g. sales), not just the row count again.
+                _default_metric = get_default_metric(report_key)
+                if _default_metric:
+                    parsed.metric = _default_metric
+                    intent_spec.metric_key = _default_metric
+                    parsed.aggregation = "sum"
+                    intent_spec.aggregation = "sum"
+                else:
+                    # count_distinct with a dimension is not supported by the SP.
+                    parsed.aggregation = "count"
+                    intent_spec.aggregation = "count"
+                parsed.limit = max(parsed.limit or 0, 50)
+                intent_spec.limit = parsed.limit
+
         entry = _REPORT_REGISTRY.get(report_key)
         if entry is None:
             yield f'data: {_json.dumps({"error": f"Unknown report: {report_key}"})}\n\n'
@@ -1474,6 +1508,7 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
             conversation_store.set_last_filters(session_id, validated_filters)
 
         # Call report API
+        tracer.start("execute")
         try:
             company_code = getattr(request.state, "company_code", None) or body.company_code or "DEMO"
             user_id = getattr(request.state, "user_id", None) or body.user_id or "u123"
@@ -1505,7 +1540,10 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                 data = await call_report_api(
                     report_key, validated_filters, company_code, user_id, _REPORT_REGISTRY,
                 )
+            tracer.end("execute", detail=f"rows={_record_count(data) if isinstance(data, dict) else '?'}")
         except Exception as exc:
+            tracer.end("execute", outcome="error", detail=str(exc)[:150])
+            tracer.emit(question=resolved_question, status="error", report_key=report_key)
             log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), failure_stage="execution")
             logger.exception("Stream: report API call failed: %s", exc)
             yield f'data: {_json.dumps({"error": "Unable to fetch report data. Please try again."})}\n\n'
@@ -1627,17 +1665,23 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                         yield f'data: {_json.dumps({"done": True})}\n\n'
                         conversation_store.add_message(session_id, "user", resolved_question)
                         conversation_store.add_message(session_id, "assistant", answer)
+                        tracer.emit(question=resolved_question, status="success", report_key=report_key,
+                                    extra={"path": "multi_period"})
                         return
                 except Exception as exc:
                     logger.warning("Stream multi-period query failed: %s", exc)
 
         # Generate answer via the deterministic pipeline
+        tracer.start("answer")
         try:
             answer = await generate_answer(
                 data, entry, validated_filters, [],
                 body.question, history=history, intent_spec=intent_spec,
             )
+            tracer.end("answer")
         except Exception as exc:
+            tracer.end("answer", outcome="error", detail=str(exc)[:150])
+            tracer.emit(question=resolved_question, status="error", report_key=report_key)
             log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), result_count=record_count, failure_stage="answer_generation")
             logger.exception("Stream: answer generation failed: %s", exc)
             yield f'data: {_json.dumps({"error": "Something went wrong generating this response. Please try again."})}\n\n'
@@ -1662,8 +1706,11 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         log_request_trace(
             request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent,
             confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"),
+            stage_latencies=tracer.latencies,
             result_count=_record_count(data), cache_hit=False,
+            failure_stage=tracer.failure_stage,
         )
+        tracer.emit(question=resolved_question, status="success", report_key=report_key)
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 

@@ -20,7 +20,15 @@
       "type": "string",
       "desc": "Invoice/document number",
       "grp": "inventory",
-      "filter": {"match": "exact", "aliases": ["invoice", "bill", "invoice no"], "id_pattern": "Invoice#"}
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "invoice",
+          "bill",
+          "invoice no"
+        ],
+        "id_pattern": "Invoice#"
+      }
     },
     "TotalTax": {
       "sql": "totaltaxAmount",
@@ -81,6 +89,30 @@
       "type": "string",
       "desc": "Tax 3 name",
       "grp": "financial"
+    },
+    "month": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(7), DI.EntryDate, 120)",
+      "desc": "Month",
+      "grp": "date"
+    },
+    "year": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), DI.EntryDate, 120)",
+      "desc": "Year",
+      "grp": "date"
+    },
+    "week": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), YEAR(DI.EntryDate)) + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, DI.EntryDate)), 2)",
+      "desc": "Week (ISO)",
+      "grp": "date"
     }
   },
   "special_metrics": {
@@ -102,14 +134,71 @@
     "end_date": "_date"
   },
   "metric_catalog": {
-    "TotalTax": {"type": "amount", "label": "Total tax", "aliases": ["total tax", "tax amount", "tax"]},
-    "TotalGST": {"type": "amount", "label": "Total GST", "aliases": ["total gst", "gst amount", "gst"]},
-    "Tax1Amount": {"type": "amount", "label": "Tax 1 amount", "aliases": ["tax 1", "cgst"]},
-    "Tax2Amount": {"type": "amount", "label": "Tax 2 amount", "aliases": ["tax 2", "igst"]},
-    "Tax3Amount": {"type": "amount", "label": "Tax 3 amount", "aliases": ["tax 3", "sgst"]},
-    "Tax4Amount": {"type": "amount", "label": "Tax 4 amount", "aliases": ["tax 4"]},
-    "Tax5Amount": {"type": "amount", "label": "Tax 5 amount", "aliases": ["tax 5"]},
-    "total_count": {"type": "count", "label": "Invoice count", "aliases": ["invoice count", "bill count", "how many invoices"]}
+    "TotalTax": {
+      "type": "amount",
+      "label": "Total tax",
+      "aliases": [
+        "total tax",
+        "tax amount",
+        "tax"
+      ]
+    },
+    "TotalGST": {
+      "type": "amount",
+      "label": "Total GST",
+      "aliases": [
+        "total gst",
+        "gst amount",
+        "gst"
+      ]
+    },
+    "Tax1Amount": {
+      "type": "amount",
+      "label": "Tax 1 amount",
+      "aliases": [
+        "tax 1",
+        "cgst"
+      ]
+    },
+    "Tax2Amount": {
+      "type": "amount",
+      "label": "Tax 2 amount",
+      "aliases": [
+        "tax 2",
+        "igst"
+      ]
+    },
+    "Tax3Amount": {
+      "type": "amount",
+      "label": "Tax 3 amount",
+      "aliases": [
+        "tax 3",
+        "sgst"
+      ]
+    },
+    "Tax4Amount": {
+      "type": "amount",
+      "label": "Tax 4 amount",
+      "aliases": [
+        "tax 4"
+      ]
+    },
+    "Tax5Amount": {
+      "type": "amount",
+      "label": "Tax 5 amount",
+      "aliases": [
+        "tax 5"
+      ]
+    },
+    "total_count": {
+      "type": "count",
+      "label": "Invoice count",
+      "aliases": [
+        "invoice count",
+        "bill count",
+        "how many invoices"
+      ]
+    }
   },
   "report_keywords": [
     "tax",
@@ -169,21 +258,27 @@
       "label": "Tax by bill"
     },
     "cgst": {
-      "patterns": ["\\bcgst\\b"],
+      "patterns": [
+        "\\bcgst\\b"
+      ],
       "metric": "Tax1Amount",
       "aggregation": "sum",
       "unit": "currency",
       "label": "CGST"
     },
     "igst": {
-      "patterns": ["\\bigst\\b"],
+      "patterns": [
+        "\\bigst\\b"
+      ],
       "metric": "Tax2Amount",
       "aggregation": "sum",
       "unit": "currency",
       "label": "IGST"
     },
     "sgst": {
-      "patterns": ["\\bsgst\\b"],
+      "patterns": [
+        "\\bsgst\\b"
+      ],
       "metric": "Tax3Amount",
       "aggregation": "sum",
       "unit": "currency",
@@ -210,9 +305,9 @@
     ]
   },
   "suggested_questions": [
-      "total tax this month",
-      "total gst amount",
-      "today tax summary",
-      "tax wise breakdown"
+    "total tax this month",
+    "total gst amount",
+    "today tax summary",
+    "tax wise breakdown"
   ]
 }

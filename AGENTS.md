@@ -14,6 +14,8 @@
 - **Shared SP**: `Sample_SQL_Sp/llm_chat_sp.sql` -> `[dbo].[DynamicReport_LLMChatbeta]` — one metadata-driven SP for all reports.
 - Report table list + base filter come from `app/report_columns/<report_key>.json` (`tables` + `base_filter` keys), sent in the `p` JSON payload by `_build_p` in `app/services/real_api_client.py`.
 - Optionally, a report can define `source_query_file` (a generated `.sql` file under `app/report_queries/`). When present, `_build_p` sends the query text as `SourceQuery` in the `p` payload. The shared SP wraps it as `FROM (<SourceQuery>) AS DI` instead of querying base tables directly. This avoids creating per-report views or tables in each tenant database.
+- `count_distinct` aggregation is only supported by the SP **without** a dimension. `QueryPlan.validate_against_registry()` coerces `count_distinct` + dimension -> `count` (per-group row counts). The SP source has a `count_distinct` grouped branch for future use, but the app never sends that combination today.
+- "details/list/breakup" on `unique_customers`/`unique_designs`/`total_count`: `main.py` injects the entity dimension via `column_registry.get_detail_dimension()` and forces `aggregation=count` so the answer is a per-entity count table.
 - Table-specific metrics can define `columns.<metric>.table_metric_exprs` keyed by every configured base table. `_build_p` sends this as `TableMetricExprs`; the shared SP chooses the matching expression for each table and fails closed if a non-empty map is incomplete. Computed dimensions can similarly use `table_dimension_exprs`, and computed filters can be emitted as `TableDimensionFilters`. A column that uses these features must provide an entry for every `tables` entry. SQL expression/filter payload fields are XML-escaped because the real API transport treats `p` as XML.
 - Routing: when `settings.real_api_llm_chat_sp > 0`, `call_real_report_api` routes chat-mode requests to the shared SP. Set via `REAL_API_LLM_CHAT_SP` env var. `0` = legacy (each report SP has its own inlined block).
 - **Adding a new report**: create `app/report_columns/<report_key>.json` with `description`, `sp`, `report_id`, `default_metric`, `tables`, `base_filter`, `columns`, `special_metrics`, `filter_key_map`, `metric_catalog`, plus optional `report_keywords`, `intents`, `canonical_values`, `fallback_intent`, `location_aliases`, and `prompt_rules`. Then add the report to `app/registry.json`. No Python or SQL changes are needed for intent routing, filter schema, metric labels, or keyword classification.
@@ -64,6 +66,12 @@ Shared cross-report rules are merged from `app/report_columns/_shared/jewelry_kn
 - 60 columns extracted from `Sample_SQL_Sp/wip_report.sql` (DynamicWIPReportDatabeta). Computed dimensions: `department` (production status CASE), `jobtype` (Regular/Sample/Repair/Recast), `size` (varies by category), `workername`, `JobLocation`, `withpip`.
 - Default metric: `JobCost`, default dimension: `department`.
 - Intent patterns, fallback, keywords, and canonical values now live in `report_columns/wip_report.json`.
+
+## Pipeline Tracing (observability)
+- `app/services/pipeline_trace.py` — `StageTracer` records per-stage latency/outcome for each chat request: `context`, `semantic_parse`, `execute`, `answer`.
+- Emitted as `{"event": "pipeline_trace", ...}` JSONL entries in `logs/audit.log`; also feeds `stage_latencies` + `failure_stage` in the existing `request_trace` entries.
+- Wired into both `/chat` and `/chat/stream` (including the multi-period early-return paths). Filter `audit.log` for `pipeline_trace` to replay a request's stage timings and find which stage failed.
+- `scripts/real_scenario_test.py` — `EXPECTED_OVERRIDE` maps intentionally cross-report questions (e.g. tax-by-customer → sales) so route-checks measure real mistakes; the summary categorizes failures as clarify / route_miss / http / exception / backend.
 
 ## Test Notes
 - `tests/test_unit_core.py` tests use `sales_summary` as report_key; `sales_report` is the column registry key. An alias `sales_summary -> sales_report` is added in `column_registry.py`, `real_api_client.py`, and `intent.py` so both keys resolve to the same config.

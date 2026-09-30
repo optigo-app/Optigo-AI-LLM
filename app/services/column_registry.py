@@ -337,6 +337,37 @@ def get_computed_only_names(report_key: str = "sales_report") -> Set[str]:
     return result
 
 
+def resolve_metric_alias(report_key: str, metric: str) -> Optional[str]:
+    """Resolve an LLM-emitted metric name to a metric_catalog/column key.
+
+    The LLM sometimes writes a label or friendly name (``Amount``, ``total
+    sales``) instead of the catalog key. Match catalog keys, labels, and
+    aliases case-insensitively, then column keys and their ``sql`` names.
+    """
+    if not metric:
+        return None
+    report_cfg = _REGISTRY.get(report_key, {})
+    catalog = report_cfg.get("metric_catalog", {}) or {}
+    columns = report_cfg.get("columns", {}) or {}
+    needle = metric.strip().lower()
+
+    for key, meta in catalog.items():
+        if key.lower() == needle:
+            return key
+        if str(meta.get("label", "")).strip().lower() == needle:
+            return key
+        for alias in meta.get("aliases", []) or []:
+            if str(alias).strip().lower() == needle:
+                return key
+
+    for key, meta in columns.items():
+        if key.lower() == needle:
+            return key
+        if str(meta.get("sql", "")).strip().lower() == needle and meta.get("sql"):
+            return key
+    return None
+
+
 def get_dimension_aliases(report_key: str) -> Dict[str, str]:
     """Natural-language alias -> column key for GROUP BY dimensions.
 
@@ -349,6 +380,50 @@ def get_dimension_aliases(report_key: str) -> Dict[str, str]:
     report_cfg = _REGISTRY.get(report_key, {})
     aliases = report_cfg.get("dimension_aliases", {}) or {}
     return {str(k).lower(): str(v) for k, v in aliases.items()}
+
+
+_DETAIL_ENTITY_ALIASES = {
+    # Detail rows show the entity NAME (CustomerFullName, designno...).
+    # Identity columns (code + name) are only a fallback for reports that
+    # lack a plain name dimension.
+    "unique_customers": ("customer", "customer identity"),
+    "unique_designs": ("design", "design identity"),
+    "total_count": ("bill",),
+}
+
+
+def get_detail_dimension(report_key: str, metric: str) -> Optional[str]:
+    """Dimension that lists the entities behind a count-style metric
+    (unique_customers -> customer, unique_designs -> design, total_count -> bill).
+    Used when the user asks for "details/list/breakup" of a count, and to
+    detect same-entity count_distinct+dimension plans (meaningless per group).
+    """
+    alias_words = _DETAIL_ENTITY_ALIASES.get(metric)
+    if not alias_words:
+        return None
+    aliases = get_dimension_aliases(report_key)
+    dim = next((aliases[w] for w in alias_words if aliases.get(w)), None)
+    if dim is None and metric == "total_count":
+        dim = aliases.get("job no") or aliases.get("serial job")
+    return dim
+
+
+def get_default_metric(report_key: str) -> Optional[str]:
+    """The report's configured ``default_metric`` (e.g. Amount for sales)."""
+    return (_REGISTRY.get(report_key, {}) or {}).get("default_metric")
+
+
+def get_entity_dimensions(report_key: str, metric: str) -> Set[str]:
+    """All dimension columns that represent the entity behind a count-style
+    metric (e.g. unique_customers -> {CustomerFullName, CustomerIdentity}).
+    Used to upgrade a name-only dimension to the identity dimension so grouped
+    detail rows match the DISTINCT-count headline number.
+    """
+    aliases = get_dimension_aliases(report_key)
+    dims = {aliases[w] for w in _DETAIL_ENTITY_ALIASES.get(metric, ()) if aliases.get(w)}
+    if metric == "total_count":
+        dims |= {d for w in ("job no", "serial job") if (d := aliases.get(w))}
+    return dims
 
 
 def get_filter_invalid_values(report_key: str, field: str) -> Set[str]:

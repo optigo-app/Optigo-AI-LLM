@@ -13,6 +13,10 @@ venv/
 !.env.example
 
 # Runtime data / generated artifacts
+scripts/*_output*.txt
+scripts/retest*.txt
+scripts/feedback_replay*.txt
+scripts/real_scenario_results*.json
 cache_data/
 docs/
 logs/
@@ -25,7 +29,6 @@ exports/
 *.db-wal
 *.log
 *.csv
-*.sql
 *.txt
 
 # Test / tool caches

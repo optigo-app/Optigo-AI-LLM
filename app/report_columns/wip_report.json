@@ -1,5 +1,5 @@
 {
-  "description": "WIP (work-in-progress) report \u2014 jobs in production, their status, costing, weights, and engaged materials",
+  "description": "WIP (work-in-progress) report — jobs in production, their status, costing, weights, and engaged materials",
   "sp": 245,
   "report_id": 21,
   "default_metric": "JobCost",
@@ -181,10 +181,10 @@
       "type": "string",
       "calc": true,
       "de": "CASE WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 33) THEN 'Bagging Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 34) THEN 'Bagging Completed' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 40) THEN 'Wax Engage Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 41) THEN 'Wax Engage Completed' WHEN ISNULL(DI.MasterManagement_productionstatusid,0) = 28 AND ISNULL(DI.isoutsource,0) = 1 THEN 'Out Source' ELSE ISNULL(DI.productionstatusname,'') END",
-      "desc": "Current production department / status",
+      "desc": "Production department/status (values like Casting-Issue, setting-Issue, Pre Polish-Issue, Assembling-Receive, Pending Request). Use THIS column for 'jobs in <process>/department' questions — always with LIKE '%x%' because values carry -Issue/-Receive/-Pending suffixes.",
       "grp": "manufacturing",
       "filter": {
-        "match": "exact",
+        "match": "like",
         "aliases": [
           "department",
           "status",
@@ -196,10 +196,10 @@
     "Current_Departmentname": {
       "sql": "Current_Departmentname",
       "type": "string",
-      "desc": "Current department name",
+      "desc": "Physical department name only (setting, Pre Polish, Assembling, Filing). Do NOT use for 'jobs in <process>' — prefer the computed department column.",
       "grp": "manufacturing",
       "filter": {
-        "match": "exact",
+        "match": "like",
         "aliases": [
           "current department",
           "department name"
@@ -672,6 +672,14 @@
       "de": "CONVERT(varchar(4), DI.jobentrydate, 120)",
       "desc": "Year",
       "grp": "date"
+    },
+    "week": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CONVERT(varchar(4), YEAR(DI.jobentrydate)) + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, DI.jobentrydate)), 2)",
+      "desc": "Week (ISO)",
+      "grp": "date"
     }
   },
   "special_metrics": {
@@ -765,7 +773,12 @@
         "total cost",
         "cost",
         "wip cost",
-        "wip value"
+        "wip value",
+        "amount",
+        "job amount",
+        "job value",
+        "work value",
+        "total value"
       ]
     },
     "MetalAmount": {
@@ -1330,9 +1343,64 @@
       "aggregation": "sum",
       "unit": "count",
       "label": "Total quantity"
+    },
+    "wip_req_gross": {
+      "patterns": [
+        "\\breq(uired)?\\.?\\s*gross\\s*w(eigh)?t\\b"
+      ],
+      "metric": "GrossWeightgm",
+      "aggregation": "sum",
+      "unit": "weight",
+      "label": "Req. Gross Wt"
+    },
+    "wip_in_progress": {
+      "patterns": [
+        "\\b(jobs?|work|pieces?)\\b[^.]{0,60}\\b(in\\s+progress|pending|running|inprocess)\\b",
+        "\\b(in\\s+progress|pending)\\b[^.]{0,60}\\b(jobs?|work|pieces?)\\b"
+      ],
+      "metric": "total_count",
+      "aggregation": "count",
+      "label": "Jobs in progress"
     }
   },
-  "canonical_values": {},
+  "canonical_values": {
+    "department": {
+      "polishing": "Polish",
+      "polish": "Polish",
+      "pre polish": "Pre Polish",
+      "final polish": "Final Polish",
+      "casting": "Casting",
+      "setting": "setting",
+      "filing": "Filing",
+      "assembling": "Assembling",
+      "assembly": "Assembling",
+      "bagging": "Bagging",
+      "soldering": "Soldering",
+      "plating": "Plating",
+      "wax setting": "Wax Setting",
+      "sprue cutting": "Sprue Cutting",
+      "sprue grinding": "Sprue Grinding",
+      "pending": "Pending"
+    },
+    "Current_Departmentname": {
+      "polishing": "Polish",
+      "polish": "Polish",
+      "pre polish": "Pre Polish",
+      "final polish": "Final Polish",
+      "casting": "Casting",
+      "setting": "setting",
+      "filing": "Filing",
+      "assembling": "Assembling",
+      "assembly": "Assembling",
+      "bagging": "Bagging",
+      "soldering": "Soldering",
+      "plating": "Plating",
+      "wax setting": "Wax Setting",
+      "sprue cutting": "Sprue Cutting",
+      "sprue grinding": "Sprue Grinding",
+      "pending": "Pending"
+    }
+  },
   "report_keywords": [
     "wip",
     "work in progress",
@@ -1371,7 +1439,22 @@
     "delivery batch",
     "job promised",
     "expected start",
-    "planning date"
+    "planning date",
+    "polishing",
+    "polish",
+    "pre polish",
+    "setting",
+    "filing",
+    "assembling",
+    "casting",
+    "bagging",
+    "in department",
+    "department wise",
+    "worker wise",
+    "jobs in progress",
+    "req gross",
+    "req gross wt",
+    "required gross"
   ],
   "location_aliases": {
     "mumbai": "BRANCH MUMBAI",

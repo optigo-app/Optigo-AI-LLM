@@ -255,7 +255,8 @@ Respond with JSON only:"""
             if key and key in registry:
                 return key
             return None
-        except (json.JSONDecodeError, llm_gateway.LLMGatewayError, Exception):
+        except Exception as exc:
+            logger.debug("LLM report classification failed: %s", exc)
             return None
 
     async def classify(

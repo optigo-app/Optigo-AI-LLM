@@ -130,7 +130,7 @@ async def parse_query(
                 tier="cheap",
                 messages=messages,
                 temperature=0.0,
-                max_tokens=300,
+                max_tokens=600,
                 response_format=_PARSE_RESPONSE_FORMAT,
             )
         except llm_gateway.LLMGatewayError:
@@ -138,7 +138,7 @@ async def parse_query(
                 tier="cheap",
                 messages=messages,
                 temperature=0.0,
-                max_tokens=300,
+                max_tokens=600,
                 response_format={"type": "json_object"},
             )
         if token_usage is not None:
@@ -148,12 +148,30 @@ async def parse_query(
                 "completion_tokens": result.usage.get("completion_tokens", 0),
                 "estimated_cost_usd": result.usage.get("estimated_cost_usd", 0),
             })
-        data = json.loads(result.text)
+        try:
+            data = json.loads(result.text)
+        except json.JSONDecodeError:
+            # Truncated/ malformed JSON — retry once with a larger budget
+            # before giving up, otherwise filters/ai_where silently drop and
+            # the user gets an unfiltered grand total.
+            retry = await llm_gateway.chat(
+                tier="cheap", messages=messages, temperature=0.0,
+                max_tokens=1200, response_format={"type": "json_object"},
+            )
+            if token_usage is not None:
+                token_usage.append({
+                    "provider": retry.usage.get("provider", "unknown"),
+                    "prompt_tokens": retry.usage.get("prompt_tokens", 0),
+                    "completion_tokens": retry.usage.get("completion_tokens", 0),
+                    "estimated_cost_usd": retry.usage.get("estimated_cost_usd", 0),
+                })
+            result = retry
+            data = json.loads(result.text)
         parsed = ParseResult(data)
         if parsed.confidence < 0.75:
             try:
                 stronger = await llm_gateway.chat(
-                    tier="strong", messages=messages, temperature=0.0, max_tokens=300,
+                    tier="strong", messages=messages, temperature=0.0, max_tokens=600,
                     response_format=_PARSE_RESPONSE_FORMAT,
                 )
                 stronger_data = json.loads(stronger.text)
@@ -230,7 +248,7 @@ async def parse_query(
         return parsed
     except json.JSONDecodeError as exc:
         logger.error("Semantic parse JSON decode error: %s | raw: %s", exc, result.text[:200])
-        return ParseResult({"report_key": "sales_report", "metric": "Amount", "aggregation": "sum"})
+        return ParseResult({"report_key": report_name or "sales_report", "metric": "Amount", "aggregation": "sum"})
     except Exception as exc:
         logger.error("Semantic parse error: %s", exc)
-        return ParseResult({"report_key": "sales_report", "metric": "Amount", "aggregation": "sum"})
+        return ParseResult({"report_key": report_name or "sales_report", "metric": "Amount", "aggregation": "sum"})

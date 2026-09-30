@@ -35,9 +35,29 @@ def expand_computed_where_refs(ai_where: str, report_key: str = "sales_report") 
     columns = _COLUMN_REGISTRY.get(report_key, {}).get("columns", {})
     if not columns:
         return ai_where
-    from app.services.column_registry import get_computed_only_names
+    from app.services.column_registry import get_computed_only_names, get_canonical_values
     computed_only = {n.lower() for n in get_computed_only_names(report_key)}
     name_map = {name.lower(): meta for name, meta in columns.items()}
+
+    # Normalize LIKE literals whose exact value is a canonical-vocabulary key:
+    # 'polishing' -> 'Polish' so LIKE '%Polish%' matches 'Pre Polish-Issue'.
+    # Applies to both `DI.<field> LIKE` and inlined-expression forms.
+    canon_all: dict = {}
+    report_cfg = _COLUMN_REGISTRY.get(report_key, {})
+    for field_map in (report_cfg.get("canonical_values") or {}).values():
+        for k, v in field_map.items():
+            canon_all.setdefault(str(k).strip().lower(), str(v))
+
+    def _canon_like(match: "re.Match") -> str:
+        lit = match.group(2)
+        mapped = canon_all.get(lit.strip().lower())
+        return f"{match.group(1)}'%{mapped if mapped else lit}%'"
+
+    if canon_all:
+        ai_where = re.sub(
+            r"(LIKE\s+)'%([^'%]*)%'",
+            _canon_like, ai_where, flags=re.IGNORECASE,
+        )
 
     for _ in range(5):  # bounded: expressions may nest other computed refs
         refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)

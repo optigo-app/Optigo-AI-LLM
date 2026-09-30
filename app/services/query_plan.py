@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
-from app.services.column_registry import _REGISTRY, derive_filter_schema
+from app.services.column_registry import _REGISTRY, derive_filter_schema, get_canonical_values
 
 
 class QueryComplexity(str, Enum):
@@ -101,7 +101,7 @@ class QueryPlan(BaseModel):
         plan = cls(
             intent=getattr(parsed, "intent", None) or f"semantic_{parsed.metric}", report_key=parsed.report_key,
             metric=parsed.metric, confidence=confidence if confidence is not None else getattr(parsed, "confidence", 0.6),
-            alternatives=[IntentAlternative(**item) for item in getattr(parsed, "alternatives", [])],
+            alternatives=[IntentAlternative(**item) for item in getattr(parsed, "alternatives", []) if isinstance(item, dict)],
             date_range=DateRange(**date_filter) if date_filter else None,
             filters=[QueryFilter(field=k, value=v) for k, v in raw_filters.items()],
             aggregation=parsed.aggregation, dimension=parsed.dimension, group_by=[parsed.dimension] if parsed.dimension else [],
@@ -129,11 +129,30 @@ class QueryPlan(BaseModel):
         metrics = cfg.get("metric_catalog", {})
         special = cfg.get("special_metrics", {})
         valid_metrics = set(metrics) | set(columns) | set(special)
+        from app.services.column_registry import resolve_metric_alias
+        if self.metric not in valid_metrics:
+            resolved_metric = resolve_metric_alias(self.report_key, self.metric)
+            if resolved_metric:
+                self.metric = resolved_metric
         if self.metric not in valid_metrics:
             raise ValueError(f"Unknown metric {self.metric!r} for {self.report_key}")
+        resolved_extras = []
+        for extra in self.extra_metrics:
+            if extra not in valid_metrics:
+                resolved_extra = resolve_metric_alias(self.report_key, extra)
+                if resolved_extra:
+                    extra = resolved_extra
+            resolved_extras.append(extra)
+        self.extra_metrics = resolved_extras
         invalid_metrics = [metric for metric in self.extra_metrics if metric not in valid_metrics]
         if invalid_metrics:
             raise ValueError(f"Unknown extra metrics for {self.report_key}: {', '.join(invalid_metrics)}")
+        # Text-typed metric columns cannot be summed/averaged — MAX() is the
+        # only valid aggregate (e.g. "name of design X" -> metric=designno).
+        metric_col = columns.get(self.metric)
+        if metric_col and str(metric_col.get("type", "")).lower() in ("string", "text") \
+                and self.aggregation in ("sum", "avg"):
+            self.aggregation = "max"
         self.alternatives = [
             item for item in self.alternatives
             if item.intent in _REGISTRY and item.intent != self.report_key
@@ -148,6 +167,31 @@ class QueryPlan(BaseModel):
             meta = columns.get(self.dimension)
             if not meta or meta.get("filter_only") or meta.get("not_available"):
                 raise ValueError(f"Invalid dimension {self.dimension!r} for {self.report_key}")
+        if self.dimension:
+            from app.services.column_registry import (
+                get_detail_dimension, get_entity_dimensions,
+            )
+            detail_dim = get_detail_dimension(self.report_key, self.metric)
+            if detail_dim and self.dimension in get_entity_dimensions(self.report_key, self.metric):
+                # Normalize to the entity's detail dimension (name column) —
+                # e.g. LLM emitting CustomerIdentity is folded back to
+                # CustomerFullName so detail tables show names only.
+                self.dimension = detail_dim
+                # Entity detail wants a useful value per row — the count is
+                # noise on top of the names. Show the report's default metric.
+                default_metric = cfg.get("default_metric")
+                if default_metric and default_metric in valid_metrics:
+                    self.metric = default_metric
+                    self.aggregation = "sum"
+        if self.aggregation == "count_distinct" and self.dimension:
+            # The chat SP only supports count_distinct without a dimension;
+            # grouped unique-counts fall back to per-group row counts.
+            self.aggregation = "count"
+        if self.dimension and self.aggregation in ("min", "max") and metric_col \
+                and str(metric_col.get("type", "")).lower() in ("string", "text"):
+            # Grouped MIN/MAX on a text column still feeds SUM(text) in the SP
+            # outer merge — COUNT(*) per group returns the same text values.
+            self.aggregation = "count"
         allowed_filters = set(derive_filter_schema(self.report_key))
         invalid = [item.field for item in self.filters if item.field not in allowed_filters]
         if invalid:
@@ -177,7 +221,13 @@ class QueryPlan(BaseModel):
         for item in self.filters:
             if _is_invalid(item.field, item.value):
                 continue
-            result[item.field] = item.value
+            value = item.value
+            if isinstance(value, str):
+                # Canonicalize to the field's configured vocabulary (e.g.
+                # 'polishing' -> 'Polish' so LIKE matches 'Pre Polish-Issue').
+                canon = get_canonical_values(self.report_key, item.field)
+                value = canon.get(value.lower().strip(), value)
+            result[item.field] = value
         if self.date_range:
             result.update(self.date_range.resolved())
         return result

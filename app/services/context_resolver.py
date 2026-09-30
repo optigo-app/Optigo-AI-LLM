@@ -78,7 +78,8 @@ def ambiguous_entity_value(question: str) -> Optional[str]:
     field_words = (
         "customer", "client", "buyer", "customer type", "customer segment",
         "business class", "salesperson", "sales rep", "employee", "brand",
-        "branch", "category", "manufacturer", "supplier", "collection",
+        "branch", "category", "manufacturer", "manufacture", "mfg", "maker",
+        "supplier", "collection",
         "product type", "metal", "wastage", "invoice", "bill",
         "job", "design", "sku",
     )
@@ -105,6 +106,8 @@ def ambiguous_entity_value(question: str) -> Optional[str]:
         "this", "last", "previous", "current",
         "top", "best", "worst", "bottom", "average", "avg", "my", "our", "all",
         "highest", "lowest", "biggest", "smallest", "most", "least",
+        "me", "us", "we", "you", "something", "everything", "anything",
+        "trending", "trend", "interesting", "summary", "details", "it", "its",
     }
     # "compare our diamond sales" — the phrase before 'sales' can be multi-word;
     # if it starts with a comparison/period keyword it is not an entity.

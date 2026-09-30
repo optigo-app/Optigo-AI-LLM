@@ -110,7 +110,12 @@ def finalize_query(
     if not parsed.date_filter and any(term in lowered for term in ("growth", "compared with the previous", "compare with the previous")):
         parsed.date_filter = {"preset": "this_month"}
     if parsed.dimension and parsed.aggregation in ("min", "max"):
-        parsed.aggregation = "sum"
+        # String-typed metrics (designno, CustomerName...) can't be summed —
+        # MAX() is the only valid aggregate for text, keep it.
+        from app.services.column_registry import _REGISTRY as _COL_REG
+        col_meta = _COL_REG.get(parsed.report_key, {}).get("columns", {}).get(parsed.metric, {})
+        if str(col_meta.get("type", "")).lower() not in ("string", "text"):
+            parsed.aggregation = "sum"
     plan = parsed.to_query_plan(question)
     plan.validate_against_registry()
     parsed.metric = plan.metric

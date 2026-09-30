@@ -266,6 +266,35 @@ QUESTIONS = {
 }
 
 
+# Questions that intentionally route to a different report than the section
+# they are filed under. The Tax report has no customer/category/design dims —
+# tax-by-customer analytics legitimately execute on Sales. Expected report is
+# checked against the "Sources:" line in the answer.
+EXPECTED_OVERRIDE = {
+    "tax by customer": "sales_report",
+    "tax by category": "sales_report",
+    "tax by design": "sales_report",
+    "tax by custmer": "sales_report",
+    "which customer contributes most tax": "sales_report",
+    "tax for gold selas": "sales_report",
+    "how much tax on gold sales": "sales_report",
+    "higest tax bill": "sales_report",
+    "wich bill has higest tax": "sales_report",
+    "which invoice has highest tax": "sales_report",
+}
+
+
+def _expected_report(section_report: str, question: str) -> str:
+    return EXPECTED_OVERRIDE.get(question.strip().lower(), section_report)
+
+
+def _source_matches(src: str, expected: str) -> bool:
+    """Loose match of the 'Sources:' line against the expected report key."""
+    if not src:
+        return True  # no source line -> can't verify, don't penalise
+    return src.lower().replace(" ", "").startswith(expected.split("_")[0])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", choices=sorted(QUESTIONS), default=None)
@@ -291,6 +320,15 @@ def main() -> None:
                         "yearcode": "", "ip_address": "",
                     })
                     d = r.json()
+                    if r.status_code != 200:
+                        print(f"[ERR] {i:2}. {q} -> HTTP {r.status_code}: {str(d)[:100]}")
+                        results.append({
+                            "report": rk, "question": q,
+                            "status": f"http_{r.status_code}",
+                            "answer": str(d)[:200], "sources": "",
+                            "ok": False, "latency_s": round(time.time() - t0, 1),
+                        })
+                        continue
                     a = d.get("answer") or {}
                     status = d.get("status", "?")
                     answer = (a.get("value") or "").replace("\n", " | ")
@@ -300,11 +338,13 @@ def main() -> None:
                     src = ""
                     if "Sources:" in answer:
                         src = answer.split("Sources:")[-1].strip()
-                    routed_ok = (not src) or (src.lower().startswith(rk.split("_")[0]))
+                    expected = _expected_report(rk, q)
+                    routed_ok = _source_matches(src, expected)
                     flag = "OK " if ok and routed_ok else ("ROUTE" if ok else "FAIL")
                     print(f"[{flag}] {i:2}. {q}\n      -> {answer[:140]}")
                     results.append({
                         "report": rk, "question": q, "status": status,
+                        "expected_report": expected,
                         "answer": a.get("value", ""), "sources": src,
                         "ok": ok and routed_ok, "latency_s": latency,
                     })
@@ -322,7 +362,26 @@ def main() -> None:
     for rk in report_keys:
         rows = [r for r in results if r["report"] == rk]
         ok = sum(1 for r in rows if r["ok"])
-        print(f"{rk:15} {ok}/{len(rows)} ok")
+        # categorize failures: clarify / route_miss / http / exception / backend
+        cats = {"clarify": 0, "route_miss": 0, "http": 0, "exception": 0, "backend": 0, "empty": 0}
+        for r in rows:
+            if r["ok"]:
+                continue
+            st = r["status"]
+            if st == "clarify":
+                cats["clarify"] += 1
+            elif st.startswith("http_"):
+                cats["http"] += 1
+            elif st == "exception":
+                cats["exception"] += 1
+            elif st == "success":  # answered but wrong report
+                cats["route_miss"] += 1
+            elif st == "error":
+                cats["backend"] += 1
+            else:
+                cats["empty"] += 1
+        detail = " ".join(f"{k}={v}" for k, v in cats.items() if v)
+        print(f"{rk:15} {ok}/{len(rows)} ok   ({detail})")
     fails = [r for r in results if not r["ok"]]
     if fails:
         print("\nFailures:")
