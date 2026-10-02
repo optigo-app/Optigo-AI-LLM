@@ -1,4 +1,3 @@
-from datetime import date, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -25,31 +24,16 @@ class DateRange(BaseModel):
     preset: Optional[str] = None
 
     def resolved(self) -> Dict[str, str]:
-        today = date.today()
-        if self.preset == "today":
-            start = end = today
-        elif self.preset == "yesterday":
-            start = end = today - timedelta(days=1)
-        elif self.preset == "this_month":
-            start, end = today.replace(day=1), today
-        elif self.preset == "last_month":
-            end = today.replace(day=1) - timedelta(days=1)
-            start = end.replace(day=1)
-        elif self.preset == "this_year":
-            start, end = today.replace(month=1, day=1), today
-        elif self.preset == "last_year":
-            start, end = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
-        elif self.preset == "this_week":
-            start, end = today - timedelta(days=today.weekday()), today
-        elif self.preset == "last_week":
-            start = today - timedelta(days=today.weekday() + 7)
-            end = start + timedelta(days=6)
-        else:
-            values = {"start_date": self.start or "", "end_date": self.end or ""}
-            if values["start_date"] and values["end_date"] and values["start_date"] > values["end_date"]:
-                values["start_date"], values["end_date"] = values["end_date"], values["start_date"]
-            return {k: v for k, v in values.items() if v}
-        return {"start_date": start.isoformat(), "end_date": end.isoformat()}
+        from app.services.orchestrator import resolve_preset_dates
+
+        if self.preset:
+            start, end = resolve_preset_dates(self.preset)
+            if start and end:
+                return {"start_date": start, "end_date": end}
+        values = {"start_date": self.start or "", "end_date": self.end or ""}
+        if values["start_date"] and values["end_date"] and values["start_date"] > values["end_date"]:
+            values["start_date"], values["end_date"] = values["end_date"], values["start_date"]
+        return {k: v for k, v in values.items() if v}
 
 
 class QueryFilter(BaseModel):
@@ -153,6 +137,12 @@ class QueryPlan(BaseModel):
         if metric_col and str(metric_col.get("type", "")).lower() in ("string", "text") \
                 and self.aggregation in ("sum", "avg"):
             self.aggregation = "max"
+        # Rate/percent metrics (Wastage %) are per-row values — SUM() over N
+        # rows is meaningless; default to AVG unless the caller asked otherwise.
+        metric_meta = metrics.get(self.metric, {})
+        if str(metric_meta.get("type", "")).lower() in ("rate", "percent", "percentage") \
+                and self.aggregation == "sum":
+            self.aggregation = "avg"
         self.alternatives = [
             item for item in self.alternatives
             if item.intent in _REGISTRY and item.intent != self.report_key
@@ -167,6 +157,15 @@ class QueryPlan(BaseModel):
             meta = columns.get(self.dimension)
             if not meta or meta.get("filter_only") or meta.get("not_available"):
                 raise ValueError(f"Invalid dimension {self.dimension!r} for {self.report_key}")
+        if self.dimension and self.dimension == self.metric:
+            # "which brand is design TR62" parses as metric=brand, dim=brand —
+            # grouping a field by itself is a lookup, not a breakdown.
+            self.dimension = None
+            self.group_by = []
+            if metric_col and str(metric_col.get("type", "")).lower() in ("string", "text"):
+                # Scalar name lookups need MAX() to return the text value;
+                # count/count_distinct would return a number instead.
+                self.aggregation = "max"
         if self.dimension:
             from app.services.column_registry import (
                 get_detail_dimension, get_entity_dimensions,

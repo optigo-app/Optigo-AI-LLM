@@ -59,6 +59,7 @@ def expand_computed_where_refs(ai_where: str, report_key: str = "sales_report") 
             _canon_like, ai_where, flags=re.IGNORECASE,
         )
 
+    protected: Dict[str, str] = {}
     for _ in range(5):  # bounded: expressions may nest other computed refs
         refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)
         rewritten = False
@@ -70,14 +71,61 @@ def expand_computed_where_refs(ai_where: str, report_key: str = "sales_report") 
             if meta and meta.get("computed"):
                 expr = meta.get("dimension_expr") or meta.get("metric_expr") or ""
                 if expr:
+                    # A self-reference inside the expression (e.g.
+                    # dimension_expr = ISNULL(DI.CustomerFullName,'')) means
+                    # the physical column — shield it so the loop can't
+                    # re-expand it into ISNULL(ISNULL(...)) garbage.
+                    sentinel = f"__SELFREF_{len(protected)}__"
+                    protected[sentinel] = f"DI.{ref}"
+                    expr_safe = re.sub(
+                        r'\bDI\.' + re.escape(ref) + r'\b', sentinel,
+                        expr, flags=re.IGNORECASE,
+                    )
                     ai_where = re.sub(
                         r'\bDI\.' + re.escape(ref) + r'\b',
-                        f"({expr})", ai_where, flags=re.IGNORECASE,
+                        f"({expr_safe})", ai_where, flags=re.IGNORECASE,
                     )
                     rewritten = True
         if not rewritten:
             break
+    for sentinel, original in protected.items():
+        ai_where = ai_where.replace(sentinel, original)
     return ai_where
+
+
+def _split_top_level_and(sql: str) -> List[str]:
+    """Split a WHERE clause on top-level AND only — ANDs inside parentheses
+    or string literals stay with their clause."""
+    parts, depth, cur, i = [], 0, [], 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if sql[j + 1 : j + 2] == "'":  # escaped '' literal quote
+                        j += 2
+                        continue
+                    j += 1
+                    break
+                j += 1
+            cur.append(sql[i:j])
+            i = j
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if depth == 0 and sql[i : i + 5].upper() == " AND ":
+            parts.append("".join(cur))
+            cur = []
+            i += 5
+            continue
+        cur.append(ch)
+        i += 1
+    parts.append("".join(cur))
+    return [p.strip() for p in parts if p.strip()]
 
 
 def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
@@ -107,12 +155,11 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
         )
         return ""
 
-    # Guard 2a: expand DI.<computed-column> refs into their configured expressions
-    ai_where = expand_computed_where_refs(ai_where, report_key)
-
     # Guard 2b: drop AND-ed clauses whose literal is a declared-invalid filter
     # value for the DI column they reference (e.g. the LLM leaks a metric word
-    # like 'diamond' into a CustomerName LIKE clause).
+    # like 'diamond' into a CustomerName LIKE clause). Runs on the raw clause —
+    # after the LIKE splitter, fragments like '%diamond%' would look invalid
+    # even though the full name 'diamond traders' is legitimate.
     invalid_cols = get_invalid_value_columns(report_key)
     if invalid_cols:
         kept = []
@@ -144,6 +191,31 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
             ai_where = " AND ".join(kept)
             if not ai_where:
                 return ""
+
+    # Guard 2ab: split multi-word LIKE literals into per-word AND LIKEs.
+    # Stored names have irregular spacing ('DEEPAK  PAREEK') so a literal
+    # LIKE '%DEEPAK PAREEK%' misses; ('%DEEPAK%' AND '%PAREEK%') matches.
+    # Runs on the raw clause — expansion can wrap operands in extra parens
+    # that the operand pattern would no longer match.
+    _operand = (
+        r"(?:(?:ISNULL|COALESCE)\s*\((?:[^()]|\([^()]*\))*\)"
+        r"|DI\.\w+(?:\s*\+\s*DI\.\w+)*)"
+    )
+
+    def _split_like(m: "re.Match") -> str:
+        expr, lit = m.group(1), m.group(2)
+        words = [w for w in re.split(r"\s+", lit.replace("%", " ").strip()) if w]
+        if len(words) < 2:
+            return m.group(0)
+        return "(" + " AND ".join(f"{expr} LIKE '%{w}%'" for w in words) + ")"
+
+    ai_where = re.sub(
+        rf"({_operand})\s+LIKE\s+'([^']*\s[^']*)'", _split_like, ai_where,
+        flags=re.IGNORECASE,
+    )
+
+    # Guard 2a: expand DI.<computed-column> refs into their configured expressions
+    ai_where = expand_computed_where_refs(ai_where, report_key)
 
     # Guard 2c: Validate all DI.<column> references against the column registry
     valid_cols = _get_cached_valid_columns(report_key)
@@ -190,7 +262,10 @@ class ParseResult:
             if meta.get("filter_only")
         }
         metric = self.metric
-        if metric in _FILTER_ONLY:
+        # filter_only columns can't be GROUP BY'd or summed, but a scalar
+        # MAX()/MIN() text lookup ('what is its customer type') is valid —
+        # only block value-aggregations.
+        if metric in _FILTER_ONLY and self.aggregation not in ("max", "min"):
             metric = "Amount"
         spec = IntentSpec(report_key=self.report_key)
         spec.intent = self.intent or f"semantic_{metric}"
@@ -202,6 +277,7 @@ class ParseResult:
             spec.dimension = ""
         spec.limit = self.limit
         spec.sort = self.sort
+        spec.ai_where = self.ai_where or ""
 
         # Determine unit using centralized classification
         spec.unit = get_metric_unit(metric, self.report_key)
@@ -215,38 +291,12 @@ class ParseResult:
             result[fname] = fval
         if self.date_filter:
             preset = self.date_filter.get("preset", "")
-            from datetime import date, timedelta
-            today = date.today()
-            if preset == "today":
-                result["start_date"] = today.isoformat()
-                result["end_date"] = today.isoformat()
-            elif preset == "yesterday":
-                y = today - timedelta(days=1)
-                result["start_date"] = y.isoformat()
-                result["end_date"] = y.isoformat()
-            elif preset == "this_month":
-                result["start_date"] = today.replace(day=1).isoformat()
-                result["end_date"] = today.isoformat()
-            elif preset == "last_month":
-                first = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-                last = today.replace(day=1) - timedelta(days=1)
-                result["start_date"] = first.isoformat()
-                result["end_date"] = last.isoformat()
-            elif preset == "this_year":
-                result["start_date"] = today.replace(month=1, day=1).isoformat()
-                result["end_date"] = today.isoformat()
-            elif preset == "this_week":
-                monday = today - timedelta(days=today.weekday())
-                result["start_date"] = monday.isoformat()
-                result["end_date"] = today.isoformat()
-            elif preset == "last_week":
-                monday = today - timedelta(days=today.weekday() + 7)
-                sunday = monday + timedelta(days=6)
-                result["start_date"] = monday.isoformat()
-                result["end_date"] = sunday.isoformat()
-            elif preset == "last_year":
-                result["start_date"] = f"{today.year - 1}-01-01"
-                result["end_date"] = f"{today.year - 1}-12-31"
+            if preset:
+                from app.services.orchestrator import resolve_preset_dates
+                start, end = resolve_preset_dates(preset)
+                if start and end:
+                    result["start_date"] = start
+                    result["end_date"] = end
             else:
                 # Explicit date range: {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}
                 start = self.date_filter.get("start", "")
@@ -301,12 +351,53 @@ class ParseResult:
                         fname, fval
                     )
                     continue
-                safe_val = str(fval).replace("'", "''")
-                clauses.append(f"{col_expr} LIKE '%{safe_val}%'")
+                # Split into words and LIKE each one: stored names often have
+                # irregular spacing ('Harrine  Trivedi'), so a literal
+                # '%Harrine Trivedi%' misses rows a per-word AND matches.
+                # Role/filler words ('customer code vidsy' -> 'vidsy') never
+                # appear inside stored names — strip them first.
+                _NAME_FILLER = {
+                    "customer", "client", "code", "name", "named", "called",
+                    "no", "no.", "number", "num", "id", "the", "a", "an",
+                }
+                raw_terms = [t for t in str(fval).split() if t.strip()]
+                terms = [t for t in raw_terms if t.lower().strip(".") not in _NAME_FILLER] or raw_terms
+                terms = [t.replace("'", "''") for t in terms]
+                if terms:
+                    clauses.append("(" + " AND ".join(f"{col_expr} LIKE '%{t}%'" for t in terms) + ")")
 
         # Add AI-generated WHERE clause (validated against column registry)
         if self.ai_where and self.ai_where.strip():
             validated = validate_ai_where(self.ai_where.strip(), self.report_key)
+            if validated:
+                # The LLM often repeats a name filter in ai_where
+                # ('customer X' → filter + CustomerFullName LIKE). The extra
+                # AND-ed clause hits a *different* name column and silently
+                # empties results, so drop fragments that only re-check the
+                # name words already filtered above.
+                name_refs = {
+                    ref.lower()
+                    for expr in _NAME_FILTERS.values()
+                    for ref in re.findall(r"DI\.(\w+)", expr, re.IGNORECASE)
+                }
+                name_words = {
+                    w.lower()
+                    for fval in self.filters.values()
+                    for w in str(fval).split()
+                }
+                if name_refs and name_words:
+                    kept = []
+                    for part in _split_top_level_and(validated):
+                        refs = {r.lower() for r in re.findall(r"DI\.(\w+)", part, re.IGNORECASE)}
+                        lits = {
+                            w.lower()
+                            for lit in re.findall(r"'((?:''|[^'])*)'", part)
+                            for w in re.sub(r"[%'']", " ", lit).split()
+                        }
+                        if refs <= name_refs and lits and lits <= name_words:
+                            continue
+                        kept.append(part)
+                    validated = " AND ".join(kept)
             if validated:
                 clauses.append(validated)
 

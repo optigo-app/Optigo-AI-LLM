@@ -720,7 +720,10 @@ class TestInvalidFilterValues(unittest.TestCase):
         from app.services.parse_result import validate_ai_where
         clause = "ISNULL(DI.CustomerName,'') LIKE '%diamond traders%'"
         out = validate_ai_where(clause, "sales_report")
-        self.assertIn("diamond traders", out)
+        # Real multi-word names are split into per-word AND LIKEs so stored
+        # names with irregular spacing still match — both words must survive.
+        self.assertIn("'%diamond%'", out)
+        self.assertIn("'%traders%'", out)
 
     def test_customer_diamond_metrics_resolve(self):
         from app.services.metric_validator import validate_metric_intent

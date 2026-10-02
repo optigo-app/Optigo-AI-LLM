@@ -927,6 +927,7 @@
     "total_count": {
       "type": "count",
       "label": "Order count",
+      "companions": ["Amount"],
       "aliases": [
         "how many orders",
         "order count",

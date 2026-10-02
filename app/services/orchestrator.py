@@ -13,6 +13,10 @@ _PERIOD_PATTERNS: List[Tuple[str, str]] = [
     ("this_month", r"\bthis\s+month\b|\bmonthly\b|\bmonth\s+to\s+date\b|\bmtd\b"),
     ("last_week", r"\blast\s+week\b"),
     ("this_week", r"\bthis\s+week\b|\bweekly\b|\bweek\s+to\s+date\b|\bwtd\b"),
+    ("next_month", r"\bnext\s+month\b"),
+    ("next_week", r"\bnext\s+week\b"),
+    ("day_after_tomorrow", r"\bday\s+after\s+tomorrow\b|\bafter\s+tomorrow\b"),
+    ("tomorrow", r"\btomorrow\b"),
     ("yesterday", r"\byesterday\b"),
     ("today", r"\btoday\b|\bdaily\b|\btodays\b"),
 ]
@@ -56,6 +60,12 @@ def resolve_preset_dates(preset: str) -> Tuple[str, str]:
     today = date.today()
     if preset == "today":
         return today.isoformat(), today.isoformat()
+    if preset == "tomorrow":
+        t = today + timedelta(days=1)
+        return t.isoformat(), t.isoformat()
+    if preset == "day_after_tomorrow":
+        t = today + timedelta(days=2)
+        return t.isoformat(), t.isoformat()
     if preset == "yesterday":
         y = today - timedelta(days=1)
         return y.isoformat(), y.isoformat()
@@ -75,11 +85,21 @@ def resolve_preset_dates(preset: str) -> Tuple[str, str]:
     if preset == "last_week":
         monday = today - timedelta(days=today.weekday() + 7)
         return monday.isoformat(), (monday + timedelta(days=6)).isoformat()
+    if preset == "next_week":
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+        return monday.isoformat(), (monday + timedelta(days=6)).isoformat()
+    if preset == "next_month":
+        first = today.replace(day=1)
+        nxt = (first.replace(day=28) + timedelta(days=5)).replace(day=1)
+        last = (nxt.replace(day=28) + timedelta(days=5)).replace(day=1) - timedelta(days=1)
+        return nxt.isoformat(), last.isoformat()
     return "", ""
 
 
 _PERIOD_LABELS = {
     "today": "Today", "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow", "day_after_tomorrow": "Day after tomorrow",
+    "next_week": "Next week", "next_month": "Next month",
     "this_week": "This week", "last_week": "Last week",
     "this_month": "This month", "last_month": "Last month",
     "this_year": "This year", "last_year": "Last year",

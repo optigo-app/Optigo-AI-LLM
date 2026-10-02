@@ -144,6 +144,7 @@ class IntentSpec:
     state_reason: str = ""
     clear_filters: Dict[str, Any] = None  # filters to remove because they were hallucinated
     override_filters: Dict[str, Any] = None  # filters to enforce/replace
+    ai_where: str = ""  # LLM-generated WHERE clause (kept for entity extraction in answers)
 
     def __post_init__(self):
         if self.clear_filters is None:

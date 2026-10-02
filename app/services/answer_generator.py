@@ -17,6 +17,29 @@ from app.services.column_registry import get_dimension_headers as _get_dimension
 
 logger = logging.getLogger(__name__)
 
+# 'why did X perform well' detection — mirrors query_planner._WHY_* regexes.
+_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
+_WHY_PERF_RE = re.compile(
+    r"\b(perform(?:ing|ed)?|well|best|top|selling|sold|success(?:ful)?|high(?:est)?|"
+    r"increas\w*|growth|drop(?:ped)?|low(?:est)?|poor|worst|better|most|least)\b",
+    re.IGNORECASE,
+)
+
+
+def _why_entity_name(filters: Dict[str, Any], spec: Optional[IntentSpec] = None) -> str:
+    """Entity value being asked about, e.g. 'H_FR41' — from validated filters
+    or the quoted literal in the ai_where clause."""
+    for k, v in (filters or {}).items():
+        if k in ("start_date", "end_date") or not v:
+            continue
+        return str(v)
+    ai = getattr(spec, "ai_where", "") if spec else ""
+    if ai:
+        m = re.search(r"'([^']+)'", ai)
+        if m:
+            return m.group(1).strip("% ").strip()
+    return ""
+
 
 @dataclass
 class AnswerResult:
@@ -60,8 +83,10 @@ def _metric_header(spec: IntentSpec) -> str:
 
 
 def _format_ranking_value(value: float, spec: IntentSpec) -> str:
-    """Format a single metric value for the ranking table (no currency normalization)."""
-    from app.services.formatters import normalize_unit_label
+    """Format a single metric value for the ranking table."""
+    from app.services.formatters import normalize_unit_label, format_currency
+    if spec.unit == "currency":
+        return format_currency(value, "INR")
     if spec.unit == "count":
         return format_count(value, normalize_unit_label(spec.unit_label))
     if spec.unit == "weight":
@@ -77,36 +102,51 @@ def _format_ranking_table(
     question: str,
     source_report: str,
 ) -> str:
-    """Format a top-N ranking as a tab-separated table with a total line.
+    """Format a top-N ranking as a markdown table with a total line.
 
     Used when spec.dimension is set and spec.limit > 1 (e.g. "top 5 customers").
     Works with both the real API format (rows with MetricValue/DimensionValue)
     and the list-mode format (sample rows with column values).
     """
+    from app.services.block_builder import format_date_friendly
+
     limit = spec.limit or 1
     dim_header = _dim_header(spec.dimension, spec.report_key)
     metric_hdr = _metric_header(spec)
-    title = question.strip()
+    title = f"{metric_hdr} by {dim_header}"
+    _TIME_DIMS = {"date", "entrydate", "jobdate", "month", "year", "week"}
+    is_time = (spec.dimension or "").lower() in _TIME_DIMS
+    rank_col = "#" if is_time else "Rank"
+
+    def _fmt_dim(d: str) -> str:
+        if is_time:
+            friendly = format_date_friendly(d)
+            return friendly if friendly else d
+        return d
+
+    def _build(display_rows, get_row):
+        lines = [title, f"| {rank_col} | {dim_header} | {metric_hdr} |", "| --- | --- | --- |"]
+        total = 0.0
+        for i, (dim_val, metric_val) in enumerate(display_rows, 1):
+            total += metric_val
+            lines.append(f"| {i} | {_fmt_dim(dim_val)} | {_format_ranking_value(metric_val, spec)} |")
+        lines.append("")
+        total_label = (f"Total {metric_hdr.lower()} across {len(display_rows)} periods"
+                       if is_time else f"Total {metric_hdr.lower()} for top {len(display_rows)}")
+        lines.append(f"{total_label}: {_format_ranking_value(total, spec)}")
+        lines.append(f"Sources: {source_report}")
+        return "\n".join(lines)
 
     # ── Real API mode: rows have MetricValue / DimensionValue ──
     if isinstance(data, dict) and "rows" in data and "raw_rd" in data:
         all_rows = data.get("rows", [])
-        display_rows = all_rows[:limit]
+        if is_time:
+            all_rows = sorted(all_rows, key=lambda r: str(r.get("DimensionValue", "")))
+        display_rows = [(str(r.get("DimensionValue", "") or ""), _to_float(r.get("MetricValue")) or 0.0)
+                        for r in all_rows[:limit]]
         if not display_rows:
             return f"No matching records found.\nSources: {source_report}"
-
-        lines = [title, f"Rank\t{dim_header}\t{metric_hdr}"]
-        total = 0.0
-        for i, row in enumerate(display_rows, 1):
-            dim_val = str(row.get("DimensionValue", "") or "")
-            metric_val = _to_float(row.get("MetricValue")) or 0.0
-            total += metric_val
-            lines.append(f"{i}\t{dim_val}\t{_format_ranking_value(metric_val, spec)}")
-
-        lines.append("")
-        lines.append(f"Total {metric_hdr.lower()} for top {len(display_rows)}: {_format_ranking_value(total, spec)}")
-        lines.append(f"Sources: {source_report}")
-        return "\n".join(lines)
+        return _build(display_rows, None)
 
     # ── List mode (dummy DB): sample rows with column values ──
     if isinstance(data, dict) and data.get("mode") == "list":
@@ -118,23 +158,14 @@ def _format_ranking_table(
             v = _to_float(r.get(metric_col))
             d = r.get(dim_col)
             if v is not None and d is not None:
-                valid.append((v, str(d)))
+                valid.append((str(d), v))
         if not valid:
             return f"No matching records found.\nSources: {source_report}"
-        reverse = spec.sort == "desc"
-        valid.sort(key=lambda x: x[0], reverse=reverse)
-        display_rows = valid[:limit]
-
-        lines = [title, f"Rank\t{dim_header}\t{metric_hdr}"]
-        total = 0.0
-        for i, (metric_val, dim_val) in enumerate(display_rows, 1):
-            total += metric_val
-            lines.append(f"{i}\t{dim_val}\t{_format_ranking_value(metric_val, spec)}")
-
-        lines.append("")
-        lines.append(f"Total {metric_hdr.lower()} for top {len(display_rows)}: {_format_ranking_value(total, spec)}")
-        lines.append(f"Sources: {source_report}")
-        return "\n".join(lines)
+        if is_time:
+            valid.sort(key=lambda x: x[0])
+        else:
+            valid.sort(key=lambda x: x[1], reverse=(spec.sort == "desc"))
+        return _build(valid[:limit], None)
 
     return f"No matching records found.\nSources: {source_report}"
 
@@ -187,9 +218,14 @@ def _format_answer(
     display = _display_value(result)
 
     if result.dimension and result.dimension_value:
-        # Ranking / top-N questions
-        entity_label = result.label
-        lines.append(f"{entity_label.title()}: {result.dimension_value}")
+        # Ranking / top-N questions: label the dimension value with the
+        # dimension's own header (e.g. "Design No"), not the metric label.
+        from app.services.block_builder import format_date_friendly
+        entity_label = _dim_header(result.dimension, spec.report_key)
+        dim_val = result.dimension_value
+        if (result.dimension or "").lower() in ("date", "entrydate", "jobdate", "month", "year", "week"):
+            dim_val = format_date_friendly(dim_val) or dim_val
+        lines.append(f"{entity_label}: {dim_val}")
         lines.append(f"{_value_label_for_ranking(spec)}: {display}")
     else:
         label = result.label
@@ -613,9 +649,26 @@ async def generate_answer(
 
     # --- Multi-row ranking: format as a table (top-N customers, branches, etc.) ---
     if spec.dimension and (spec.limit or 1) > 1:
+        # 'why did X perform well' follow-ups: prepend a governed explanation
+        # layer (facts computed from the executed breakdown — never invented).
+        why_entity = _why_entity_name(validated_filters, spec)
+        is_why = bool(why_entity and _WHY_RE.search(question) and _WHY_PERF_RE.search(question))
         if response_mode == "wide":
+            if is_why:
+                return block_builder.build_why_blocks(
+                    data, spec, question, source_report, assumptions,
+                    filters=validated_filters, entity_name=why_entity,
+                    record_count=_record_count(data),
+                )
             return block_builder.build_ranking_blocks(data, spec, question, source_report, assumptions, filters=validated_filters)
-        return _format_ranking_table(data, spec, question, source_report)
+        text = _format_ranking_table(data, spec, question, source_report)
+        if is_why:
+            facts, insight = block_builder.why_explanation(data, spec, why_entity, _record_count(data))
+            if facts:
+                text = (f"Why {why_entity} performed well\n"
+                        + "\n".join(f"- {f}" for f in facts)
+                        + f"\nAI Insight: {insight}\n\n" + text)
+        return text
 
     # --- Compute the metric deterministically --------------------------------
     resolved = _resolve_metric(data, spec, question)
@@ -684,7 +737,9 @@ async def generate_answer(
             label=result.label, value=result.value, unit=result.unit, currency=result.currency,
             record_count=record_count, source_report=source_report,
             assumptions=assumptions,
-            dimension_value=result.dimension_value, aggregation=spec.aggregation,
+            dimension_value=result.dimension_value,
+            dimension_label=_dim_header(spec.dimension, spec.report_key) if spec.dimension else "",
+            aggregation=spec.aggregation,
             unit_label=result.unit_label, filters=validated_filters,
         )
 

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     retrieval_rerank: bool = False
     prompt_caching: bool = False
+    # Prompt schema reduction: "off" = full report rules/examples in every parse
+    # prompt; "rules" = only include special_rules/negative_examples/synonyms/
+    # ai_where examples whose trigger terms appear in the question (fail-open:
+    # rules with no extractable trigger are always kept).
+    schema_reduction: str = "rules"
 
     # Security
     auth_required: bool = True
@@ -106,9 +111,20 @@ def validate_startup() -> list[str]:
         if provider in (cheap_provider, strong_provider) and not getattr(s, key_attr):
             warnings.append(f"{key_attr.upper()} is not set but {provider} is configured as a LLM provider")
 
-    # Embeddings always need OpenAI key for now
-    if not s.openai_api_key:
-        warnings.append("OPENAI_API_KEY is not set – embeddings (classifier + cache) will not work")
+    # Embeddings need the key for whichever provider the model routes to:
+    # "text-embedding-*" -> OpenAI, other "*-embedding-*" names -> Gemini.
+    emb_model = s.embedding_model.lower()
+    if "text-embedding" in emb_model:
+        if not s.openai_api_key:
+            warnings.append("OPENAI_API_KEY is not set – embeddings (classifier + cache) will not work")
+    elif "embedding" in emb_model:
+        if not (s.gemini_api_key or s.openai_api_key):
+            warnings.append(
+                f"EMBEDDING_MODEL={s.embedding_model} needs GEMINI_API_KEY or OPENAI_API_KEY – "
+                "embeddings (classifier + cache) will not work"
+            )
+    elif not s.openai_api_key:
+        warnings.append(f"EMBEDDING_MODEL={s.embedding_model} is not a known embedding model – embeddings will not work")
 
     # Production security warnings
     if s.cors_origins == "*":

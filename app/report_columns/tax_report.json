@@ -193,6 +193,7 @@
     "total_count": {
       "type": "count",
       "label": "Invoice count",
+      "companions": ["TotalTax"],
       "aliases": [
         "invoice count",
         "bill count",

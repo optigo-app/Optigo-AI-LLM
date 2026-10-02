@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 _FOLLOWUP_CUES: tuple[str, ...] = (
     r"\bwhat about\b", r"\bhow about\b", r"\band what\b", r"\band how\b",
     r"\bthose\b", r"\bthese\b", r"\bthem\b", r"\bthey\b", r"\btheir\b",
+    r"\babove\b", r"\bthis\b", r"\bthat\b", r"\bits\b",
     r"\bthat one\b", r"\bthis one\b", r"\bsame\b", r"\bprevious\b",
     r"\bprior\b", r"\bearlier\b", r"\blast one\b", r"\bthe first\b",
     r"\bthe second\b", r"\bthe last\b", r"\bagain\b", r"\binstead\b",
@@ -60,10 +61,21 @@ _SHORT_QUESTION_THRESHOLD = 25
 # Compile the cue + standalone regexes once at import time
 _FOLLOWUP_RE = re.compile("|".join(_FOLLOWUP_CUES), re.IGNORECASE)
 _STANDALONE_RE = re.compile("|".join(_STANDALONE_INDICATORS), re.IGNORECASE)
+# Referential cues (pronouns/demonstratives) point back at a specific earlier
+# turn — 'above design total diamond weight' still needs rewriting even though
+# it names a metric. These bypass the standalone-indicator guard.
+_REFERENTIAL_RE = re.compile(
+    r"\b(above|same|its|their|them|they|those|these|that one|this one|"
+    r"last one|the first|the second|the last|previous|prior|earlier)\b",
+    re.IGNORECASE,
+)
 _DATE_CHANGE_RE = re.compile(r"\b(change|different|another|other|modify|update|switch|try)\b.*\b(date|period|range)\b|\b(date|period|range)\b.*\b(change|different|another|other|modify|update|switch)\b", re.IGNORECASE)
 _DATE_VALUE_RE = re.compile(
-    r"\b(today|yesterday|tomorrow|this\s+(week|month|year)|last\s+(week|month|year)|"
+    r"\b(today|yesterday|tomorrow|this\s+(week|month|year|quarter)|"
+    r"last\s+(week|month|year|quarter)|"
     r"january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+    r"q[1-4]|fy\s*'?\d{0,4}|financial\s+year|fiscal\s+year|fortnight|"
     r"\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4})\b",
     re.IGNORECASE,
 )
@@ -96,6 +108,15 @@ def ambiguous_entity_value(question: str) -> Optional[str]:
     if not match:
         return None
     value = match.group(1).strip()
+    # Anything after the metric word must be empty, punctuation, a date word,
+    # or an explicit "no filters" directive. Trailing business words mean the
+    # matched phrase was never an entity ("overall total sales for brand").
+    tail = question[match.end():].strip()
+    if tail:
+        tail_clean = tail.strip(" ?.!").lower()
+        if tail_clean not in ("", "please", "without filters", "no filters",
+                              "without filter") and not _DATE_VALUE_RE.fullmatch(tail_clean):
+            return None
     excluded = {
         "what", "show", "give", "tell", "how much", "total",
         "sale", "sales", "revenue", "amount", "value",
@@ -108,13 +129,45 @@ def ambiguous_entity_value(question: str) -> Optional[str]:
         "highest", "lowest", "biggest", "smallest", "most", "least",
         "me", "us", "we", "you", "something", "everything", "anything",
         "trending", "trend", "interesting", "summary", "details", "it", "its",
+        "overall", "overall total", "grand total", "without filters",
+        "net", "gross", "tomorrow", "next month", "next week",
+        # Hinglish question words — 'aaj kitna sale hua' asks 'how much sale
+        # today', not an entity named 'aaj kitna'.
+        "aaj", "aj", "aaj ka", "aj ka", "kal", "parso", "kitna", "kitne",
+        "kitni", "kya", "kya hai", "batao", "dikhao", "bataye", "hua",
+        "hai", "hain", "tha", "tha kya", "is mahine", "pichle mahine",
+        "is saal", "pichle saal", "agle", "agla",
     }
     # "compare our diamond sales" — the phrase before 'sales' can be multi-word;
     # if it starts with a comparison/period keyword it is not an entity.
     first_word = value.lower().split()[0] if value.split() else ""
     if value.lower() in excluded or first_word in excluded:
         return None
+    # Period expressions ('august', 'q3', 'fy26', 'last quarter') are date
+    # filters, not entity values — don't clarify them.
+    if _DATE_VALUE_RE.search(value):
+        return None
     return value
+
+
+def is_probable_person_name(value: str) -> bool:
+    """Heuristic: does an ambiguous entity look like a person's name?
+
+    Multi-word alphabetic values ('Deepak Pareek', 'Harrine Trivedi') and
+    single ALL-CAPS alphabetic tokens ('VIDSY') are overwhelmingly customer
+    names in this domain — safe to try the customer filter directly instead
+    of forcing a clarification round-trip. Codes with digits/underscores
+    ('TR62', 'ANE_143') stay ambiguous.
+    """
+    words = value.split()
+    if len(words) >= 2:
+        return all(w[:1].isalpha() for w in words)
+    return (
+        len(words) == 1
+        and words[0].isalpha()
+        and words[0].isupper()
+        and len(words[0]) >= 3
+    )
 
 
 def looks_like_followup(question: str, history: Optional[List[Dict[str, str]]]) -> bool:
@@ -144,6 +197,11 @@ def looks_like_followup(question: str, history: Optional[List[Dict[str, str]]]) 
         if not _STANDALONE_RE.search(q_lower):
             return True
 
+    # Referential cues always resolve against context — a metric word in the
+    # same sentence doesn't make 'above design' standalone.
+    if _REFERENTIAL_RE.search(q_lower):
+        return True
+
     # Check for explicit follow-up cue words
     if _FOLLOWUP_RE.search(q_lower):
         # But not if the question also has a strong standalone indicator
@@ -163,6 +221,7 @@ Rules:
 - Resolve pronouns (it, they, them, those, these) to their referents from history
 - Resolve ellipsis ("by category" -> "total sales this year by category")
 - Resolve relative dates ("last month", "this year") if context implies a specific period
+- PRESERVE the attribute being asked: "its type" / "its brand" -> "<entity> customer type" / "<entity> brand", never replace it with a sales/amount question
 - Preserve the user's intent — do NOT change the question's meaning
 - If the question is already standalone, return it unchanged
 - Return ONLY the rewritten question, no explanation, no quotes
@@ -183,6 +242,10 @@ Output: total tax last year
 History: user: total sales | assistant: Total sales: Rs 1324 crore
 Question: top 5
 Output: top 5 customers by total sales
+
+History: user: customer code vidsy total sales | assistant: Total sales: Rs 37 lakh
+Question: tell me its customer type
+Output: customer code vidsy customer type
 """
 
 _MAX_HISTORY_TURNS = 4

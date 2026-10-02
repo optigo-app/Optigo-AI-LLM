@@ -14,16 +14,21 @@ import os
 import sqlite3
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
-# All SQLite DBs in the project (relative to repo root).
-DEFAULT_DBS = [
-    "logs/conversations.db",
-    "logs/feedback.db",
-    "logs/token_usage.db",
-    "cache_data/cache.db",
-    "scripts/cache_data/cache.db",
-]
+
+def _discover_dbs() -> list:
+    """All SQLite DBs under the project (logs/, cache_data/, scripts/cache_data/),
+    resolved against the repo root so the script works from any cwd."""
+    import glob
+    found = []
+    for pattern in ("logs/*.db", "cache_data/*.db", "scripts/cache_data/*.db"):
+        found.extend(glob.glob(os.path.join(ROOT, pattern)))
+    return sorted(found)
+
+
+DEFAULT_DBS = _discover_dbs()
 
 
 def list_tables(con: sqlite3.Connection):
@@ -48,7 +53,8 @@ def export_db(db_path: str, out_root: str) -> int:
     # Flat output: all CSVs in one folder. The db name (+ parent dir when
     # needed for uniqueness) is embedded in the filename so every file is
     # self-identifying, e.g. cache_data_cache__chat_messages.csv
-    rel_dir = os.path.dirname(db_path).replace("/", "_").replace("\\", "_").replace(".", "")
+    rel_dir = os.path.dirname(os.path.relpath(db_path, ROOT))
+    rel_dir = rel_dir.replace("/", "_").replace("\\", "_").replace(".", "")
     prefix = f"{rel_dir}_{db_name}" if rel_dir else db_name
     os.makedirs(out_root, exist_ok=True)
 
@@ -80,12 +86,13 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    dbs = args.db or DEFAULT_DBS
+    dbs = [d if os.path.isabs(d) else os.path.join(ROOT, d) for d in (args.db or DEFAULT_DBS)]
+    out_root = args.out if os.path.isabs(args.out) else os.path.join(ROOT, args.out)
     grand = 0
     for db in dbs:
         print("DB: %s" % db)
-        grand += export_db(db, args.out)
-    print("\nDone. %d total rows exported to '%s/'" % (grand, args.out))
+        grand += export_db(db, out_root)
+    print("\nDone. %d total rows exported to '%s/'" % (grand, out_root))
 
 
 if __name__ == "__main__":

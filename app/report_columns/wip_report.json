@@ -996,6 +996,7 @@
     "total_count": {
       "type": "count",
       "label": "Job count",
+      "companions": ["JobCost"],
       "aliases": [
         "how many jobs",
         "job count",

@@ -1034,7 +1034,7 @@
     "supplier": "Manufacturer"
   },
   "name_filter_map": {
-    "customername": "ISNULL(DI.CustomerName,'')",
+    "customername": "LTRIM(RTRIM(ISNULL(DI.CustomerName,'') + ' ' + ISNULL(DI.CustomerFullName,'')))",
     "customerfullname": "ISNULL(DI.CustomerFullName,'')",
     "salesrep": "ISNULL(DI.usermanagement_salesrepcode,'')"
   },
@@ -1047,6 +1047,7 @@
         "business amount",
         "sales amount",
         "bill amount",
+        "amt",
         "revenue",
         "total sales",
         "job total amount",
@@ -1145,6 +1146,9 @@
       "aliases": [
         "gross weight",
         "gross wt",
+        "gw",
+        "gr wt",
+        "grs wt",
         "total weight",
         "material weight",
         "material",
@@ -1160,7 +1164,9 @@
       "label": "Net weight",
       "aliases": [
         "net weight",
-        "net wt"
+        "net wt",
+        "nw",
+        "netwt"
       ]
     },
     "GoldWt": {
@@ -1201,7 +1207,9 @@
       "aliases": [
         "diamond carat weight",
         "diamond ctw",
-        "diamond weight"
+        "dctw",
+        "diamond weight",
+        "dia ctw"
       ]
     },
     "miscwt": {
@@ -1215,6 +1223,7 @@
     "total_count": {
       "type": "count",
       "label": "Bill Count",
+      "companions": ["Amount"],
       "aliases": [
         "how many bills",
         "bill count",
@@ -2245,6 +2254,36 @@
       "pcs",
       "sales",
       "total"
+    ],
+    "design": [
+      "no",
+      "no.",
+      "number",
+      "num",
+      "above",
+      "this",
+      "that",
+      "its",
+      "the",
+      "total",
+      "weight",
+      "amount",
+      "sales"
+    ],
+    "designno": [
+      "no",
+      "no.",
+      "number",
+      "num",
+      "above",
+      "this",
+      "that",
+      "its",
+      "the",
+      "total",
+      "weight",
+      "amount",
+      "sales"
     ]
   }
 }

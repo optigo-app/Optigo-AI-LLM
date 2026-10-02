@@ -5,6 +5,9 @@ All sections are auto-generated from ``report_columns/*.json`` via
 ``catalog_builder`` so adding a report needs no prompt edits.
 """
 import logging
+import re
+
+from app.config import settings
 
 from app.services.catalog_builder import (
     _load_report_columns,
@@ -61,6 +64,82 @@ Note: response_mode is controlled by the client. Do not include it in the JSON o
 """
 
 
+# ── Question-aware section selection (schema_reduction="rules") ───────────────
+# Triggers extracted from rules are matched against the question; rules whose
+# subject never appears are dropped. Rules with no extractable trigger are
+# always kept (fail-open) so guardrails can't be silently pruned.
+
+_RULE_STOPWORDS = {
+    "the", "user", "and", "for", "with", "use", "not", "all", "only", "when",
+    "this", "that", "into", "from", "wise", "type", "types", "always", "never",
+    "do", "does", "set", "must", "note", "also", "but", "same", "means",
+}
+
+
+def _rule_triggers(rule: str) -> set:
+    """Extract matchable trigger terms from a rule line.
+
+    Sources: "quoted phrases", arrow/equality left-hand sides
+    (``material->grosswt``, ``CSAmt=ColorStoneAmount``), and colon headers
+    (``Gold purity: ...``). Returns lowercase terms.
+    """
+    triggers = set()
+    triggers.update(m.group(1).lower().strip() for m in re.finditer(r'"([^"]+)"', rule))
+    for m in re.finditer(r"([A-Za-z_][A-Za-z_/ ]{0,40}?)\s*(?:->|→|=)", rule):
+        lhs = m.group(1).strip().lower()
+        for part in lhs.split("/"):
+            part = part.strip()
+            if part:
+                triggers.add(part)
+                triggers.update(w for w in part.split() if len(w) >= 3)
+    header = re.match(r"\s*([A-Za-z][A-Za-z /_]{2,30}?)\s*:", rule)
+    if header:
+        triggers.update(w for w in header.group(1).lower().split("/") for w in w.split() if len(w) >= 3)
+    return {t for t in triggers if t not in _RULE_STOPWORDS and len(t) >= 2}
+
+
+def _trigger_matches(trigger: str, question_lower: str) -> bool:
+    if " " in trigger:
+        return trigger in question_lower
+    return bool(re.search(rf"\b{re.escape(trigger)}\b", question_lower))
+
+
+def _select_rules(rules: list, question_lower: str) -> list:
+    """Keep rules that match the question; fail-open when no trigger extracted."""
+    if not question_lower:
+        return rules
+    kept = []
+    for rule in rules:
+        triggers = _rule_triggers(rule)
+        if not triggers or any(_trigger_matches(t, question_lower) for t in triggers):
+            kept.append(rule)
+    return kept
+
+
+def _match_question_columns(columns: dict, question_lower: str) -> set:
+    """Columns the question plausibly references (name/aliases/filter aliases).
+
+    Columns with an id_pattern (Job#, Design#, Invoice#, SKU#...) and
+    LIKE-match name columns are always included — record-ID and entity-name
+    lookups are the highest-stakes filters and cheap to keep.
+    """
+    matched = set()
+    for col_name, meta in columns.items():
+        if not isinstance(meta, dict):
+            continue
+        f = meta.get("filter")
+        if isinstance(f, dict) and (f.get("id_pattern") or f.get("match") == "like"):
+            matched.add(col_name)
+            continue
+        terms = {col_name.lower()}
+        terms.update(a.lower().strip() for a in meta.get("aliases", []))
+        if isinstance(f, dict):
+            terms.update(a.lower().strip() for a in f.get("aliases", []))
+        if any(len(t) >= 3 and _trigger_matches(t, question_lower) for t in terms):
+            matched.add(col_name)
+    return matched
+
+
 def _get_column_filter_expr(col_name: str, col_meta: dict) -> str:
     """Get the SQL expression for a column to use in ai_where.
 
@@ -73,17 +152,24 @@ def _get_column_filter_expr(col_name: str, col_meta: dict) -> str:
     return f"DI.{sql}"
 
 
-def _build_report_rules(report_key: str) -> str:
+def _build_report_rules(report_key: str, question: str = "") -> str:
     """Build report-specific rule lines from column filter metadata + prompt_rules.
 
     Auto-generates synonyms, record ID patterns, and filter rules from the
     `filter` object on each column. Appends non-derivable special_rules and
     excluded_columns from prompt_rules.
+
+    When schema_reduction="rules" and a question is given, synonyms are limited
+    to columns the question references (id_pattern + LIKE columns always kept),
+    and special_rules/negative_examples are trigger-selected.
     """
     cfg = _load_report_columns()
     report_cfg = cfg.get(report_key, {})
     columns = report_cfg.get("columns", {})
     rules = report_cfg.get("prompt_rules", {})
+
+    slim = settings.schema_reduction == "rules" and question
+    matched_cols = _match_question_columns(columns, question.lower()) if slim else set(columns.keys())
 
     lines = []
 
@@ -92,15 +178,16 @@ def _build_report_rules(report_key: str) -> str:
     id_patterns = []
     for col_name, col_meta in columns.items():
         # Metric/dimension aliases (top-level "aliases" key)
-        for alias in col_meta.get("aliases", []):
-            synonyms.append(f"{alias}→{col_name}")
-        # Filter aliases (inside "filter" object)
         f = col_meta.get("filter")
-        if f:
-            for alias in f.get("aliases", []):
+        if not slim or col_name in matched_cols:
+            for alias in col_meta.get("aliases", []):
                 synonyms.append(f"{alias}→{col_name}")
-            if f.get("id_pattern"):
-                id_patterns.append(f)
+            # Filter aliases (inside "filter" object)
+            if f:
+                for alias in f.get("aliases", []):
+                    synonyms.append(f"{alias}→{col_name}")
+        if f and f.get("id_pattern"):
+            id_patterns.append(f)
 
     if synonyms:
         lines.append(f"- Synonyms: {', '.join(synonyms)}.")
@@ -146,11 +233,13 @@ def _build_report_rules(report_key: str) -> str:
         )
 
     # ── Append non-derivable special rules from prompt_rules ──
-    for rule in rules.get("special_rules", []):
+    # Trigger-selected when slimming; rules with no extractable trigger are kept.
+    question_lower = question.lower() if slim else ""
+    for rule in _select_rules(rules.get("special_rules", []), question_lower):
         lines.append(f"- {rule}")
 
     # ── Append negative examples from prompt_rules ──
-    neg = rules.get("negative_examples", [])
+    neg = _select_rules(rules.get("negative_examples", []), question_lower)
     if neg:
         lines.append("- DO NOT map (negative examples):")
         for ex in neg:
@@ -162,9 +251,8 @@ def _build_report_rules(report_key: str) -> str:
     return "\n".join(lines)
 
 
-def _build_ai_where_examples(report_key: str) -> str:
+def _build_ai_where_examples(report_key: str, question: str = "") -> str:
     """Build ai_where examples from column filter metadata.
-
     Auto-generates one example per column with a `filter` object:
     - LIKE match: shows the expression with LIKE '%value%'
     - Exact match: shows DI.<sql>='value'
@@ -172,16 +260,26 @@ def _build_ai_where_examples(report_key: str) -> str:
 
     For computed columns with complex dimension_expr, uses DI.<sql> instead
     to keep examples readable.
+
+    When schema_reduction="rules" and a question is given, only examples for
+    columns the question references are emitted — falling back to all columns
+    when nothing matched so filtering guidance is never fully absent.
     """
     cfg = _load_report_columns()
     report_cfg = cfg.get(report_key, {})
     columns = report_cfg.get("columns", {})
+
+    matched_cols = set()
+    if settings.schema_reduction == "rules" and question:
+        matched_cols = _match_question_columns(columns, question.lower())
 
     examples = []
 
     for col_name, col_meta in columns.items():
         f = col_meta.get("filter")
         if not f:
+            continue
+        if matched_cols and col_name not in matched_cols:
             continue
 
         match_type = f.get("match", "exact")
@@ -212,7 +310,7 @@ def _build_ai_where_examples(report_key: str) -> str:
     return "\n".join(f"- {ex}" for ex in examples)
 
 
-def _build_system_prompt(report_key: str = "sales_report") -> str:
+def _build_system_prompt(report_key: str = "sales_report", question: str = "") -> str:
     """Build the system prompt with dynamic column sections from report_columns.json."""
     sections = _build_prompt_column_sections(report_key)
     return _SYSTEM_PROMPT_TEMPLATE.format(
@@ -221,8 +319,8 @@ def _build_system_prompt(report_key: str = "sales_report") -> str:
         computed_metrics=sections["computed_metrics"],
         filter_only=sections["filter_only"],
         dimensions=sections["dimensions"],
-        report_rules=_build_report_rules(report_key),
-        ai_where_examples=_build_ai_where_examples(report_key),
+        report_rules=_build_report_rules(report_key, question),
+        ai_where_examples=_build_ai_where_examples(report_key, question),
     )
 
 

@@ -47,7 +47,7 @@ from app.services.filter_extractor import (
 )
 from app.services import conversation_store, usage_store
 from app.services import feedback_store
-from app.services.context_resolver import ambiguous_entity_value, needs_date_clarification, resolve_context
+from app.services.context_resolver import ambiguous_entity_value, is_probable_person_name, looks_like_followup, needs_date_clarification, resolve_context
 from app.services.validator import validate_and_fill
 from app.services.column_registry import get_suggested_questions
 
@@ -298,6 +298,26 @@ async def get_report_data_v1(report_key: str, request: Request) -> Dict[str, Any
     return await get_report_data(report_key, request)
 
 
+def _future_period_message(validated_filters: Dict[str, Any]) -> Optional[str]:
+    """Honest guard: a resolved range that starts in the future can never
+    return data — say so instead of executing and showing an empty result."""
+    start = (validated_filters or {}).get("start_date", "")
+    if not start:
+        return None
+    from datetime import date
+    try:
+        future = date.fromisoformat(start[:10]) > date.today()
+    except (ValueError, TypeError):
+        return None
+    if not future:
+        return None
+    from app.services.block_builder import format_date_friendly
+    return (
+        f"That period ({format_date_friendly(start)}) is in the future — no "
+        "data exists yet. Try 'today', 'yesterday', or a past date range."
+    )
+
+
 _CHAT_RESPONSE_EXCLUDE = {
     "report_key", "answer_text", "assumptions",
     "download_url", "token_usage", "session_id",
@@ -409,14 +429,23 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
 
     ambiguous_value = ambiguous_entity_value(body.question)
     if ambiguous_value:
-        msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
-        blocks = [block_builder.build_entity_choice_block(ambiguous_value, msg)] if response_mode == "wide" else None
-        conversation_store.add_message(session_id, "user", body.question)
-        conversation_store.add_message(session_id, "assistant", msg)
-        return ChatResponse(
-            status="clarify", answer=AnswerData(type="text", value=msg),
-            answer_text=msg, session_id=session_id, blocks=blocks,
-        )
+        if is_probable_person_name(ambiguous_value):
+            # Person-like names almost always mean a customer — apply the
+            # customer filter directly instead of a clarification round-trip.
+            body.question = re.sub(
+                re.escape(ambiguous_value),
+                f"customer {ambiguous_value}",
+                body.question, count=1, flags=re.IGNORECASE,
+            )
+        else:
+            msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
+            blocks = [block_builder.build_entity_choice_block(ambiguous_value, msg)] if response_mode == "wide" else None
+            conversation_store.add_message(session_id, "user", body.question)
+            conversation_store.add_message(session_id, "assistant", msg)
+            return ChatResponse(
+                status="clarify", answer=AnswerData(type="text", value=msg),
+                answer_text=msg, session_id=session_id, blocks=blocks,
+            )
 
     token_usage_calls: List[Dict[str, int]] = []
     from app.services.pipeline_trace import StageTracer
@@ -497,7 +526,13 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
         planning = await plan_query(
             resolved_question, history=history, token_usage=token_usage_calls,
             report_name=resolved_report_name,
-            previous_filters=conversation_store.get_last_filters(session_id) or {},
+            # Session filters (date range etc.) only carry into genuine
+            # follow-ups — a standalone question or suggestion click must not
+            # silently inherit yesterday's window.
+            previous_filters=(
+                conversation_store.get_last_filters(session_id)
+                if looks_like_followup(body.question, history) else {}
+            ) or {},
             registry=_REPORT_REGISTRY,
             fallback_report=last_intent.get("report_key", ""),
         )
@@ -515,6 +550,23 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
     validated_filters = planning.validated_filters
     ai_where = planning.ai_where
     routing_source = planning.routing_source
+
+    _future_msg = _future_period_message(validated_filters)
+    if _future_msg:
+        if response_mode == "wide":
+            return ChatResponse(
+                report_key=report_key,
+                answer=AnswerData(type="text", value=_future_msg),
+                answer_text=_future_msg,
+                session_id=session_id,
+                blocks=[{"type": "text", "content": _future_msg}],
+            )
+        return ChatResponse(
+            report_key=report_key,
+            answer=AnswerData(type="text", value=_future_msg),
+            answer_text=_future_msg,
+            session_id=session_id,
+        )
 
     # "details / list / breakup" on a count-style metric — the user wants the
     # entities themselves (which customers/designs/bills), not the count again.
@@ -742,8 +794,8 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
     if not date_was_explicit and (
         validated_filters.get("start_date") or validated_filters.get("end_date")
     ):
-        sd = validated_filters.get("start_date", "")
-        ed = validated_filters.get("end_date", "")
+        sd = block_builder.format_date_friendly(validated_filters.get("start_date", ""))
+        ed = block_builder.format_date_friendly(validated_filters.get("end_date", ""))
         if sd and ed:
             assumptions.append(f"Date range {sd} to {ed}")
         elif sd:
@@ -907,7 +959,9 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             if not validated_filters.get("start_date") and cur_start:
                 validated_filters["start_date"] = cur_start
                 validated_filters["end_date"] = cur_end
-                assumptions.append(f"Date range {cur_start} to {cur_end}")
+                assumptions.append(
+                    f"Date range {block_builder.format_date_friendly(cur_start)} to {block_builder.format_date_friendly(cur_end)}"
+                )
 
         if _is_growth_query:
             try:
@@ -950,7 +1004,8 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
                 # Build assumptions for both periods
                 growth_assumptions = list(assumptions)
                 growth_assumptions.append(
-                    f"Previous period: {prev_filters['start_date']} to {prev_filters['end_date']}"
+                    f"Previous period: {block_builder.format_date_friendly(prev_filters['start_date'])}"
+                    f" to {block_builder.format_date_friendly(prev_filters['end_date'])}"
                 )
 
                 from app.services.block_builder import _display_value
@@ -1250,11 +1305,25 @@ async def _chat_impl(body: ChatRequest, request: Request) -> ChatResponse:
             elif start == end == _yesterday:
                 _label = "Yesterday"
             elif start == end:
-                _label = start
+                _label = block_builder.format_date_friendly(start)
             elif start and end:
-                _label = f"{start} to {end}"
+                try:
+                    _s = _date.fromisoformat(start)
+                    _e = _date.fromisoformat(end)
+                    if _s.day == 1 and (_e + _td(days=1)).day == 1:
+                        # Whole-month span: 'Aug 2026' or 'Aug 2026 – Sep 2026'
+                        _fm = block_builder.format_date_friendly(start[:7])
+                        _tm = block_builder.format_date_friendly(end[:7])
+                        _label = _fm if _fm == _tm else f"{_fm} – {_tm}"
+                    else:
+                        _label = (
+                            f"{block_builder.format_date_friendly(start)}"
+                            f" to {block_builder.format_date_friendly(end)}"
+                        )
+                except ValueError:
+                    _label = f"{start} to {end}"
             else:
-                _label = start or end
+                _label = block_builder.format_date_friendly(start or end)
             period_info = PeriodInfo(start=start, end=end, label=_label)
 
     response = ChatResponse(
@@ -1401,12 +1470,21 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
 
     ambiguous_value = ambiguous_entity_value(body.question)
     if ambiguous_value:
-        async def _entity_clarification():
-            import json as _json
-            msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
-            block = block_builder.build_entity_choice_block(ambiguous_value, msg)
-            yield f'data: {_json.dumps({"status": "clarify", "answer": msg, "blocks": [block], "done": True})}\n\n'
-        return StreamingResponse(_entity_clarification(), media_type="text/event-stream")
+        if is_probable_person_name(ambiguous_value):
+            # Person-like names almost always mean a customer — apply the
+            # customer filter directly instead of a clarification round-trip.
+            body.question = re.sub(
+                re.escape(ambiguous_value),
+                f"customer {ambiguous_value}",
+                body.question, count=1, flags=re.IGNORECASE,
+            )
+        else:
+            async def _entity_clarification():
+                import json as _json
+                msg = f"What does '{ambiguous_value}' refer to: a customer, salesperson, brand, branch, or category?"
+                block = block_builder.build_entity_choice_block(ambiguous_value, msg)
+                yield f'data: {_json.dumps({"status": "clarify", "answer": msg, "blocks": [block], "done": True})}\n\n'
+            return StreamingResponse(_entity_clarification(), media_type="text/event-stream")
 
     async def _stream():
         import json as _json
@@ -1444,7 +1522,12 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
             planning = await plan_query(
                 resolved_question, history=history, token_usage=token_usage_calls,
                 report_name=stream_report_name,
-                previous_filters=conversation_store.get_last_filters(session_id) or {},
+                # Same rule as /chat: session filters only carry into
+                # genuine follow-ups, never standalone questions.
+                previous_filters=(
+                    conversation_store.get_last_filters(session_id)
+                    if looks_like_followup(body.question, history) else {}
+                ) or {},
                 registry=_REPORT_REGISTRY,
                 fallback_report=last_intent.get("report_key", ""),
             )
@@ -1462,6 +1545,12 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         intent_spec = planning.intent_spec
         validated_filters = planning.validated_filters
         ai_where = planning.ai_where
+
+        _future_msg = _future_period_message(validated_filters)
+        if _future_msg:
+            yield f'data: {_json.dumps({"answer": _future_msg, "report_key": report_key})}\n\n'
+            yield f'data: {_json.dumps({"done": True})}\n\n'
+            return
 
         # "details / list / breakup" on a count-style metric — show entities.
         if (
@@ -1555,6 +1644,81 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
         # Send metadata
         yield f'data: {_json.dumps({"report_key": report_key, "filters": validated_filters, "request_id": getattr(request.state, "request_id", ""), "intent_confidence": query_plan.confidence, "complexity": query_plan.complexity.value, "record_count": record_count, "results_limited": query_plan.results_limited})}\n\n'
 
+        # Multi-metric support: companion metrics fetch via extra SP calls —
+        # mirrors the /chat path so streamed answers show count + amount too.
+        if parsed.extra_metrics and not parsed.dimension:
+            from app.services.semantic_query_parser import get_metric_unit, get_metric_unit_label
+            from app.services.orchestrator import execute_plan
+            from app.services.query_plan import QueryStep
+            from app.services.block_builder import _display_value
+
+            metric_results = []
+            primary_resolved = _resolve_metric(data, intent_spec, body.question)
+            metric_results.append({
+                "metric_key": parsed.metric,
+                "value": primary_resolved.value,
+                "unit": intent_spec.unit,
+                "unit_label": getattr(intent_spec, "unit_label", ""),
+                "label": primary_resolved.label,
+            })
+            query_plan.steps = [QueryStep(type="metric_fetch", metric=m) for m in parsed.extra_metrics]
+
+            async def _fetch_extra(step):
+                extra_spec = parsed.to_intent_spec()
+                extra_spec.metric_key = step.metric
+                extra_spec.intent = f"semantic_{step.metric}"
+                extra_spec.unit = get_metric_unit(step.metric)
+                extra_spec.unit_label = get_metric_unit_label(step.metric, report_key)
+                if settings.use_real_api:
+                    extra_data = await call_real_report_api(
+                        report_key=report_key, intent_spec=extra_spec,
+                        validated_filters=validated_filters, appuserid=appuserid,
+                        ip_address=ip_address, yearcode=yearcode, sp_number=sp_number,
+                        ai_where_clause=ai_where,
+                    )
+                else:
+                    extra_data = await call_report_api(
+                        report_key, validated_filters, company_code, user_id, _REPORT_REGISTRY,
+                    )
+                resolved = _resolve_metric(extra_data, extra_spec, body.question)
+                return {
+                    "metric_key": step.metric, "value": resolved.value,
+                    "unit": extra_spec.unit, "unit_label": getattr(extra_spec, "unit_label", ""),
+                    "label": resolved.label,
+                }
+
+            for outcome in await execute_plan(query_plan, _fetch_extra):
+                if outcome.error:
+                    metric_results.append({"metric_key": outcome.step.metric, "value": None,
+                                           "unit": get_metric_unit(outcome.step.metric),
+                                           "unit_label": get_metric_unit_label(outcome.step.metric, report_key),
+                                           "label": outcome.step.metric})
+                else:
+                    metric_results.append(outcome.data)
+
+            lines = []
+            for r in metric_results:
+                if r.get("value") is not None:
+                    lines.append(f"{r.get('label', r['metric_key'])}: {_display_value(r['value'], r.get('unit', 'currency'), 'INR', r.get('unit_label', ''))}")
+                else:
+                    lines.append(f"{r.get('label', r['metric_key'])}: N/A")
+            if record_count > 0:
+                lines.append(f"Transactions: {record_count}")
+            lines.append(f"Sources: {report_key.replace('_', ' ').title()}")
+            answer = "\n".join(lines)
+            if market_ctx:
+                answer = f"{build_market_note(market_ctx, market_snapshot)}\n\n{answer}"
+            chunk_size = 3
+            for i in range(0, len(answer), chunk_size):
+                yield f'data: {_json.dumps({"chunk": answer[i:i + chunk_size]})}\n\n'
+            yield f'data: {_json.dumps({"done": True})}\n\n'
+            conversation_store.add_message(session_id, "user", resolved_question)
+            conversation_store.add_message(session_id, "assistant", answer)
+            tracer.emit(question=resolved_question, status="success", report_key=report_key,
+                        extra={"path": "multi_metric"})
+            log_request_trace(request_id=getattr(request.state, "request_id", ""), intent=query_plan.intent, confidence=query_plan.confidence, query_plan=query_plan.model_dump(mode="json"), result_count=record_count)
+            return
+
         # Growth/comparison support: fetch previous period and emit delta answer
         _sq_lower = resolved_question.lower()
         _is_growth = any(kw in _sq_lower for kw in (
@@ -1597,7 +1761,8 @@ async def _chat_stream_impl(body: ChatRequest, request: Request):
                     f"Previous period: {_display_value(prev_v, _u, 'INR', _ul)}",
                     f"Growth: {format_percentage(growth_pct)}" if growth_pct is not None
                     else "Growth: N/A (previous period was zero)",
-                    f"Previous period range: {prev_filters['start_date']} to {prev_filters['end_date']}",
+                    f"Previous period range: {block_builder.format_date_friendly(prev_filters['start_date'])}"
+                    f" to {block_builder.format_date_friendly(prev_filters['end_date'])}",
                     f"Transactions: {record_count}",
                     f"Sources: {report_key.replace('_', ' ').title()}",
                 ]

@@ -114,7 +114,7 @@ async def parse_query(
     if example_context:
         user_prompt = f"{example_context}\n\n{user_prompt}"
     messages = [
-        {"role": "system", "content": _build_system_prompt(report_name)},
+        {"role": "system", "content": _build_system_prompt(report_name, question)},
         {"role": "user", "content": user_prompt},
     ]
 

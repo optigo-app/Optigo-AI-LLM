@@ -109,7 +109,8 @@ class SimpleBlocksRichLayoutTests(unittest.TestCase):
         )
         period = next(b for b in blocks if b.get("type") == "period")
         self.assertEqual(period["label"], "Date Range")
-        self.assertEqual(period["value"], "2026-09-01 to 2026-09-15")
+        self.assertEqual(period["value"], "01 Sep 2026 to 15 Sep 2026")
+        self.assertEqual(period["filters"]["start_date"], "2026-09-01")
 
     def test_no_period_block_without_dates(self):
         blocks = block_builder.build_simple_blocks(
@@ -384,7 +385,7 @@ class NoDataBlocksTests(unittest.TestCase):
         self.assertIn("date_range_input", types)
         period = next(b for b in blocks if b.get("type") == "period")
         self.assertEqual(period["label"], "Date Range")
-        self.assertEqual(period["value"], "2026-09-01 to 2026-09-15")
+        self.assertEqual(period["value"], "01 Sep 2026 to 15 Sep 2026")
         picker = DateRangeInputBlock(**next(b for b in blocks if b.get("type") == "date_range_input"))
         self.assertEqual(picker.start_field, "start_date")
         self.assertEqual(picker.end_field, "end_date")

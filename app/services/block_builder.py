@@ -7,7 +7,7 @@ LLM fallback for complex multi-section answers.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.formatters import (
     format_count,
@@ -25,6 +25,32 @@ logger = logging.getLogger(__name__)
 def _dim_header(dim: str, report_key: str = "sales_report") -> str:
     headers = _get_dimension_headers(report_key)
     return headers.get(dim, (dim or "Item").replace("_", " ").title())
+
+
+_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def format_date_friendly(iso: Any) -> str:
+    """'2026-08-01' -> '01 Aug 2026'; '2026-08' -> 'Aug 2026'. Non-ISO input
+    passes through unchanged."""
+    parts = str(iso or "").split("-")
+    try:
+        if len(parts) == 3:
+            return f"{int(parts[2]):02d} {_MONTH_ABBR[int(parts[1]) - 1]} {parts[0]}"
+        if len(parts) == 2:
+            return f"{_MONTH_ABBR[int(parts[1]) - 1]} {parts[0]}"
+    except (ValueError, IndexError):
+        pass
+    return str(iso or "")
+
+
+def _format_dimension_value(dim_val: str, dimension: str) -> str:
+    """Friendly labels for time dimensions: '2026-10' -> 'Oct 2026'."""
+    if (dimension or "").lower() in ("month", "date", "entrydate", "jobdate"):
+        friendly = format_date_friendly(dim_val)
+        return friendly if friendly != dim_val else dim_val
+    return dim_val
 
 
 def _metric_header(unit: str, unit_label: str = "") -> str:
@@ -51,6 +77,8 @@ def _to_float(value: Any) -> Optional[float]:
 
 
 def _format_ranking_value(value: float, unit: str, unit_label: str = "") -> str:
+    if unit == "currency":
+        return format_currency(value, "INR")
     if unit == "count":
         return format_count(value, normalize_unit_label(unit_label))
     if unit == "weight":
@@ -92,11 +120,11 @@ def _build_period_block(filters: Optional[Dict[str, Any]]) -> Optional[Dict[str,
         return {"type": "period", "label": "Filters", "value": "; ".join(f"{k}={v}" for k, v in other.items()),
                 "filters": filters}
     if start and end and start == end:
-        value = start
+        value = format_date_friendly(start)
     elif start and end:
-        value = f"{start} to {end}"
+        value = f"{format_date_friendly(start)} to {format_date_friendly(end)}"
     else:
-        value = start or end or ""
+        value = format_date_friendly(start or end)
     return {"type": "period", "label": "Date Range", "value": value, "filters": filters}
 
 
@@ -144,6 +172,7 @@ def build_simple_blocks(
     source_report: str,
     assumptions: Optional[List[str]] = None,
     dimension_value: Optional[str] = None,
+    dimension_label: str = "",
     aggregation: str = "",
     unit_label: str = "",
     filters: Optional[Dict[str, Any]] = None,
@@ -176,10 +205,10 @@ def build_simple_blocks(
         return blocks
 
     if value is not None and dimension_value:
-        blocks.append({"type": "text", "content": f"{label.title()}: {dimension_value}"})
+        blocks.append({"type": "text", "content": f"{dimension_label or 'Top'}: {dimension_value}"})
         display = _display_value(value, unit, currency, unit_label)
         blocks.append({"type": "metric_card",
-                        "label": f"Value ({_metric_header(unit, unit_label)})",
+                        "label": label,
                         "value": display,
                         "raw_value": float(value) if _to_float(value) is not None else None,
                         "unit": unit, "currency": currency if unit == "currency" else None,
@@ -391,28 +420,39 @@ def build_ranking_blocks(
             blocks.append({"type": "sources", "items": [source_report]})
         return blocks
 
+    dimension_name = getattr(spec, "dimension", "")
+    # Time dimensions read naturally in chronological order (Aug then Sep),
+    # not revenue rank. ISO 'YYYY-MM'/'YYYY-MM-DD' strings sort lexically.
+    if dimension_name.lower() in ("date", "entrydate", "jobdate", "month", "year", "week"):
+        rows_data.sort(key=lambda r: str(r.get("DimensionValue", "")))
     table_rows: List[List[str]] = []
     raw_rows: List[Dict[str, Any]] = []
     total = 0.0
     for i, row in enumerate(rows_data, 1):
-        dim_val = str(row.get("DimensionValue", "") or "")
+        dim_val_raw = str(row.get("DimensionValue", "") or "")
+        dim_val = _format_dimension_value(dim_val_raw, dimension_name)
         metric_val = _to_float(row.get("MetricValue")) or 0.0
         total += metric_val
         table_rows.append([str(i), dim_val, _format_ranking_value(metric_val, unit, unit_label)])
-        raw_rows.append({"rank": i, "dimension_value": dim_val, "raw_value": metric_val, "unit": unit, "unit_label": unit_label})
+        raw_rows.append({"rank": i, "dimension_value": dim_val_raw, "raw_value": metric_val, "unit": unit, "unit_label": unit_label})
 
-    blocks.append({"type": "heading", "content": question.strip()})
+    blocks.append({"type": "heading", "content": f"{metric_hdr} by {dim_header}"})
 
-    blocks.append({"type": "table", "columns": ["Rank", dim_header, metric_hdr], "rows": table_rows, "raw_data": raw_rows})
+    _is_time = dimension_name.lower() in ("date", "entrydate", "jobdate", "month", "year", "week")
+    _rank_col = "#" if _is_time else "Rank"
+    blocks.append({"type": "table", "columns": [_rank_col, dim_header, metric_hdr], "rows": table_rows, "raw_data": raw_rows})
+    _total_label = (f"Total {metric_hdr.lower()} across {len(rows_data)} periods" if _is_time
+                    else f"Total {metric_hdr.lower()} for top {len(rows_data)}")
     blocks.append({
         "type": "metric",
-        "content": f"Total {metric_hdr.lower()} for top {len(rows_data)}: {_format_ranking_value(total, unit, unit_label)}",
+        "content": f"{_total_label}: {_format_ranking_value(total, unit, unit_label)}",
         "raw_value": total, "unit": unit, "unit_label": unit_label, "label": f"Total {metric_hdr.lower()}",
     })
 
     # Add charts for ranking comparisons (2+ numeric data points)
     if len(rows_data) >= 2:
-        chart_data = [{"x": str(row.get("DimensionValue", "") or ""), "y": _to_float(row.get("MetricValue")) or 0.0}
+        chart_data = [{"x": _format_dimension_value(str(row.get("DimensionValue", "") or ""), dimension_name),
+                       "y": _to_float(row.get("MetricValue")) or 0.0}
                       for row in rows_data]
 
         # Determine chart type based on dimension and row count
@@ -458,6 +498,110 @@ def build_ranking_blocks(
         combined = "; ".join(assumptions)
         blocks.append({"type": "assumption", "content": combined})
 
+    return blocks
+
+
+def why_explanation(
+    data: Dict[str, Any],
+    spec: Any,
+    entity_name: str,
+    record_count: int,
+) -> Tuple[List[str], str]:
+    """Compute governed 'why did X perform well' facts from breakdown rows.
+
+    Every sentence is derived from the executed result set — nothing is
+    invented. Returns (fact_lines, insight_sentence).
+    """
+    unit = getattr(spec, "unit", "")
+    unit_label = getattr(spec, "unit_label", "")
+    metric_hdr = _metric_header(unit, unit_label)
+    dim_header = _dim_header(getattr(spec, "dimension", ""), getattr(spec, "report_key", "sales_report"))
+    entity = entity_name or "This item"
+
+    rows: List[Tuple[str, float]] = []
+    if isinstance(data, dict) and "rows" in data:
+        for r in data.get("rows", []):
+            v = _to_float(r.get("MetricValue"))
+            d = str(r.get("DimensionValue", "") or "")
+            if v is not None and d:
+                rows.append((d, v))
+    elif isinstance(data, dict) and data.get("mode") == "list":
+        metric_col = getattr(spec, "metric_key", "")
+        dim_col = getattr(spec, "dimension", "")
+        for r in data.get("sample", []):
+            v = _to_float(r.get(metric_col))
+            d = r.get(dim_col)
+            if v is not None and d is not None:
+                rows.append((str(d), v))
+
+    if not rows:
+        return [], ""
+
+    def _fmt(v: float) -> str:
+        return _display_value(v, unit, "INR", unit_label)
+
+    total = sum(v for _, v in rows)
+    n = len(rows)
+    top_name, top_val = rows[0]
+    top_share = (top_val / total * 100.0) if total else 0.0
+
+    facts: List[str] = []
+    txn = f", {format_count(record_count)} transaction{'s' if record_count != 1 else ''}" if record_count else ""
+    facts.append(f"{metric_hdr}: {_fmt(total)} across {n} {dim_header.lower()}{'s' if n != 1 else ''}{txn}")
+    if n == 1:
+        facts.append(f"Single-driver concentration: {top_name} contributes 100% ({_fmt(top_val)})")
+    else:
+        facts.append(f"Top contributor: {top_name} — {_fmt(top_val)} ({top_share:.0f}% of total)")
+        if n >= 3:
+            top3 = sum(v for _, v in rows[:3])
+            facts.append(f"Top 3 {dim_header.lower()}s together contribute {top3 / total * 100.0:.0f}%")
+
+    if n == 1 or top_share >= 70:
+        insight = (f"{entity}'s performance is concentrated — driven mainly by {top_name}, "
+                   f"not broad-based {dim_header.lower()} demand.")
+    else:
+        insight = (f"{entity} shows broad-based demand — spread across {n} {dim_header.lower()}s "
+                   f"with no single one dominating.")
+    return facts, insight
+
+
+def build_why_blocks(
+    data: Dict[str, Any],
+    spec: Any,
+    question: str,
+    source_report: str,
+    assumptions: Optional[List[str]] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    entity_name: str = "",
+    record_count: int = 0,
+) -> List[Dict[str, Any]]:
+    """Ranking blocks plus a governed 'why' explanation layer.
+
+    Produces the layout the UI shows for 'why did X perform well':
+    heading -> fact bullets -> insight -> breakdown table/chart -> sources.
+    """
+    blocks = build_ranking_blocks(data, spec, question, source_report, assumptions, filters=filters)
+
+    facts, insight = why_explanation(data, spec, entity_name, record_count)
+    if not facts:
+        return blocks
+
+    # Retitle the heading to the entity being explained
+    title_entity = entity_name or question.strip()
+    for i, b in enumerate(blocks):
+        if b.get("type") == "heading":
+            blocks[i] = {"type": "heading", "content": f"Why {title_entity} performed well"}
+            insert_at = i + 1
+            break
+    else:
+        insert_at = 0
+        blocks.insert(0, {"type": "heading", "content": f"Why {title_entity} performed well"})
+
+    explain_blocks: List[Dict[str, Any]] = [
+        {"type": "list", "title": "Key drivers", "items": facts},
+        {"type": "text", "title": "AI Insight", "content": f"AI Insight: {insight}"},
+    ]
+    blocks[insert_at:insert_at] = explain_blocks
     return blocks
 
 
@@ -700,20 +844,14 @@ def blocks_to_text(blocks: List[Dict[str, Any]]) -> str:
             parts.append(b.get("content", ""))
         elif btype == "heading":
             parts.append(b.get("content", ""))
-        elif btype == "table":
+        elif btype in ("table", "breakdown"):
             cols = b.get("columns", [])
             rows = b.get("rows", [])
             if cols:
-                parts.append("\t".join(cols))
+                parts.append("| " + " | ".join(str(c) for c in cols) + " |")
+                parts.append("|" + "|".join(" --- " for _ in cols) + "|")
             for row in rows:
-                parts.append("\t".join(str(c) for c in row))
-        elif btype == "breakdown":
-            cols = b.get("columns", [])
-            rows = b.get("rows", [])
-            if cols:
-                parts.append("\t".join(cols))
-            for row in rows:
-                parts.append("\t".join(str(c) for c in row))
+                parts.append("| " + " | ".join(str(c) for c in row) + " |")
         elif btype == "list":
             for item in b.get("items", []):
                 parts.append(f"• {item}")
