@@ -8,7 +8,7 @@ from app.config import settings
 from app.models import ReportRegistryEntry
 from app.services import llm_gateway
 from app.services.intent import classify_question_by_intent
-from app.services.column_registry import get_report_keywords
+from app.services.column_registry import get_report_keywords, get_generic_routing_terms
 
 
 def _load_report_keywords() -> Dict[str, List[str]]:
@@ -343,16 +343,22 @@ def _keyword_classify(
     """Fallback keyword-based classifier."""
     lowered = question.lower()
     best_key: Optional[str] = None
-    best_score = 0
+    best_score = 0.0
+    generic_terms = get_generic_routing_terms()
 
     for report_key, keywords in _load_report_keywords().items():
         if report_key not in registry:
             continue
-        score = 0
+        score = 0.0
         for keyword in keywords:
             if re.search(r'\b' + re.escape(keyword) + r'\b', lowered):
-                # Longer keyword matches are weighted slightly higher to avoid generic words.
-                score += len(keyword.split())
+                # Longer keyword matches are weighted slightly higher to avoid
+                # generic words; generic entity nouns count even less so a
+                # distinctive term ("quote") beats a bare "jobs".
+                if keyword.lower() in generic_terms:
+                    score += 0.5
+                else:
+                    score += len(keyword.split())
         if score > best_score:
             best_score = score
             best_key = report_key

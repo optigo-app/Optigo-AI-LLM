@@ -134,7 +134,9 @@ def get_dimension_headers(report_key: str = "sales_report") -> Dict[str, str]:
         if meta.get("not_available"):
             continue
         sql = meta.get("sql", name)
-        desc = meta.get("description", "")
+        # `label` is the user-facing display name; `desc` is prompt/catalog
+        # guidance text and may contain instructions — never show it raw.
+        desc = meta.get("label") or meta.get("description", "")
         if desc:
             headers[sql] = desc
         headers[name] = desc or name
@@ -256,6 +258,17 @@ def get_report_keywords(report_key: str = "sales_report") -> List[str]:
     return list(report_cfg.get("report_keywords", []))
 
 
+def get_generic_routing_terms() -> Set[str]:
+    """Return entity nouns that are too generic to decide report routing alone.
+
+    Defined in ``_shared/jewelry_knowledge.json`` as ``generic_routing_terms`` —
+    words like "jobs" or "records" appear in almost every ERP question, so a
+    report whose only keyword signal is a generic term should not outrank a
+    report matched on distinctive vocabulary (e.g. "quote" -> order_report).
+    """
+    return {t.lower() for t in _SHARED_KNOWLEDGE.get("generic_routing_terms", [])}
+
+
 def get_report_intents(report_key: str = "sales_report") -> Dict[str, Dict[str, Any]]:
     """Return the per-report intent definitions used by the legacy intent layer.
 
@@ -286,10 +299,22 @@ def get_intent_patterns(report_key: str = "sales_report") -> List[Tuple[Any, Dic
 
 
 def get_canonical_values(report_key: str = "sales_report", field: str = "") -> Dict[str, str]:
-    """Return the canonical-value mapping for a report field, if any."""
+    """Return the canonical-value mapping for a report field, if any.
+
+    ``field`` arrives as the emitted filter key — usually a ``filter_key_map``
+    alias (``order_type``). Canonical maps are keyed by the target column
+    (``orderType``), so fall back through ``filter_key_map`` when the literal
+    field name has no direct entry.
+    """
     report_cfg = _REGISTRY.get(report_key, {})
     canonical = report_cfg.get("canonical_values", {})
-    return dict(canonical.get(field, {}))
+    direct = canonical.get(field)
+    if direct:
+        return dict(direct)
+    target = report_cfg.get("filter_key_map", {}).get(field, "")
+    if isinstance(target, str) and target in canonical:
+        return dict(canonical[target])
+    return {}
 
 
 def get_fallback_intent(report_key: str = "sales_report") -> Optional[Dict[str, Any]]:

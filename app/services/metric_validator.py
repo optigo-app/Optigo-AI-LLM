@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 # Intent type detection from question keywords
 _WEIGHT_KEYWORDS = {
-    "weight", "wt", "gram", "gm", "gms", "carat", "ct", "ctw",
+    "weight", "wt", "gram", "grams", "gm", "gms", "carat", "carats",
+    "ct", "cts", "ctw", "kg", "kilogram", "kilograms",
     "material", "materials", "material used", "material weight",
     "material qty", "material breakup", "total material",
     "gross weight", "gross wt", "net weight", "net wt",
@@ -62,6 +63,15 @@ _COUNT_ENTITY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "how many <unit>" is a quantity question, not a record count —
+# 'how many grams of gold' wants grosswt, not COUNT(*).
+_COUNT_OF_UNIT_RE = re.compile(
+    r"\b(?:how\s+many|number\s+of|no\.?\s*of|count\s+of)\s+"
+    r"(?:grams?|gms?|gm|carats?|cts?|ct|kg|kilograms?|kilos?|"
+    r"tonnes?|ounces?|oz|karats?)\b",
+    re.IGNORECASE,
+)
+
 
 def _detect_intent_type(question: str) -> str:
     """Detect the user's semantic intent type from the question.
@@ -71,11 +81,13 @@ def _detect_intent_type(question: str) -> str:
     """
     q = " " + question.lower().strip() + " "
 
+    if _COUNT_OF_UNIT_RE.search(q):
+        # 'how many grams/carats' asks for a weight total, not a row count.
+        return "weight"
     if _COUNT_ENTITY_RE.search(q):
         return "count"
-
     # Check count first (most specific — "how many" is unambiguous)
-    if _COUNT_RE.search(q):
+    elif _COUNT_RE.search(q):
         return "count"
 
     # Check rate
@@ -129,7 +141,9 @@ def validate_metric_intent(metric: str, question: str, report_key: str = "sales_
         if cat_meta.get("type") != intent_type:
             continue
         for alias in cat_meta.get("aliases", []):
-            if alias in q_lower:
+            # Word boundaries — a raw substring check lets short aliases
+            # ('nw', 'gw', 'amt', 'rate') match inside unrelated words.
+            if re.search(rf"\b{re.escape(alias)}\b", q_lower):
                 score = len(alias)  # longer match = more specific
                 if score > best_score:
                     best_score = score

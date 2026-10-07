@@ -6,7 +6,7 @@ consumed by ``ParseResult.generate_where_clause``.
 """
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from app.services.intent import IntentSpec
 from app.services.column_registry import _REGISTRY as _COLUMN_REGISTRY
@@ -93,6 +93,11 @@ def expand_computed_where_refs(ai_where: str, report_key: str = "sales_report") 
     return ai_where
 
 
+# The SP validates AIWhereClause at 2000 chars; keep headroom for transport
+# escaping.
+_AIWHERE_MAX_LEN = 1900
+
+
 def _split_top_level_and(sql: str) -> List[str]:
     """Split a WHERE clause on top-level AND only — ANDs inside parentheses
     or string literals stay with their clause."""
@@ -126,6 +131,93 @@ def _split_top_level_and(sql: str) -> List[str]:
         i += 1
     parts.append("".join(cur))
     return [p.strip() for p in parts if p.strip()]
+
+
+def _has_top_level(sql: str, op: str) -> bool:
+    """True when ``sql`` contains ``op`` (' OR ', ' AND ') at paren depth 0 —
+    operators inside expressions or string literals don't count."""
+    depth, i, n = 0, 0, len(sql)
+    opu = op.upper()
+    m = len(op)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if sql[j + 1 : j + 2] == "'":
+                        j += 2
+                        continue
+                    j += 1
+                    break
+                j += 1
+            i = j
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if depth == 0 and sql[i : i + m].upper() == opu:
+            return True
+        i += 1
+    return False
+
+
+def _compact_repeated_operands(ai_where: str) -> str:
+    """Merge AND-ed LIKE predicates that repeat one identical operand.
+
+    Expanded computed columns (e.g. the ~1.4k-char department CASE) overflow
+    the SP's 2000-char AIWhereClause limit when the same operand is LIKE-ed
+    more than once. ``E LIKE '%a%' AND E LIKE '%b%'`` is equivalent to
+    ``E LIKE '%a%b%'`` (same order requirement) — merging removes the
+    duplicated expression.
+    """
+    pat = re.compile(r"^(?P<op>.*?)\s+LIKE\s+'%(?P<lit>[^']*)%'\s*$",
+                     re.IGNORECASE | re.DOTALL)
+    parts: List[str] = []
+    for part in _split_top_level_and(ai_where):
+        # The multi-word LIKE splitter wraps AND-chains in parens — unwrap them
+        # (safe only when the group holds pure ANDs; an OR inside must keep
+        # its parens or precedence changes).
+        inner = ""
+        if part.startswith("(") and part.endswith(")"):
+            depth = 0
+            for k, ch in enumerate(part):
+                depth += ch == "("
+                depth -= ch == ")"
+                if depth == 0 and k < len(part) - 1:
+                    break  # outer paren closes early — not a whole-wrapped group
+            else:
+                inner = part[1:-1]
+        if inner and not _has_top_level(inner, " OR "):
+            subs = _split_top_level_and(inner)
+            if len(subs) > 1:
+                parts.extend(subs)
+                continue
+        parts.append(part)
+    merged: List[str] = []
+    i = 0
+    while i < len(parts):
+        m = pat.match(parts[i])
+        if not m:
+            merged.append(parts[i])
+            i += 1
+            continue
+        lits = [m.group("lit")]
+        j = i + 1
+        while j < len(parts):
+            m2 = pat.match(parts[j])
+            if m2 and m2.group("op") == m.group("op"):
+                lits.append(m2.group("lit"))
+                j += 1
+            else:
+                break
+        if len(lits) > 1:
+            merged.append(f"{m.group('op')} LIKE '%{'%'.join(lits)}%'")
+        else:
+            merged.append(parts[i])
+        i = j
+    return " AND ".join(merged)
 
 
 def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
@@ -217,6 +309,18 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
     # Guard 2a: expand DI.<computed-column> refs into their configured expressions
     ai_where = expand_computed_where_refs(ai_where, report_key)
 
+    # Guard 2d: the SP caps AIWhereClause at 2000 chars. Expanded computed
+    # operands repeat per predicate, so first merge same-operand LIKE chains;
+    # if it still doesn't fit, fail closed rather than hit an SP rejection.
+    if len(ai_where) > _AIWHERE_MAX_LEN:
+        ai_where = _compact_repeated_operands(ai_where)
+    if len(ai_where) > _AIWHERE_MAX_LEN:
+        logger.warning(
+            "ai_where validation: expanded clause exceeds SP limit "
+            "(%d chars) — nullifying ai_where", len(ai_where),
+        )
+        return ""
+
     # Guard 2c: Validate all DI.<column> references against the column registry
     valid_cols = _get_cached_valid_columns(report_key)
     refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)
@@ -231,6 +335,315 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
             return ""
 
     return ai_where
+
+
+# Simple one-column predicates we can safely retarget: complex clauses
+# (nested AND/OR, arithmetic, functions over several columns) are left alone.
+_PREDICATE_RE = re.compile(
+    r"^\s*\(?\s*"
+    r"(?P<operand>(?:ISNULL|COALESCE)\s*\([^()]*\)|(?:DI\.)?\w+(?:\s*\+\s*(?:DI\.)?\w+)*)"
+    r"\s*(?P<op>NOT\s+IN|IN|NOT\s+LIKE|LIKE|=|<>|!=)\s*"
+    r"\(?\s*(?P<lits>'(?:''|[^'])*'(?:\s*,\s*'(?:''|[^'])*')*|\d+(?:\s*,\s*\d+)*)\s*\)?\s*$",
+    re.IGNORECASE,
+)
+
+# Words that must never be "rescued" as filter values — they are question
+# scaffolding or time vocabulary, not ERP data values. Observed false
+# positives: 'you' -> brandname 'YOUR BRAND', 'yesterday' -> has_quotation
+# 'Yes' (prefix containment on a word the date parser already consumed).
+_RESCUE_STOPWORDS = {
+    # function / question words
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am",
+    "can", "could", "would", "should", "shall", "will", "may", "might", "must",
+    "do", "does", "did", "done", "has", "have", "had",
+    "i", "me", "my", "we", "our", "us", "you", "your", "yours", "he", "she",
+    "his", "her", "it", "its", "they", "them", "their",
+    "this", "that", "these", "those", "there", "here",
+    "what", "which", "who", "whom", "whose", "when", "where", "why", "how",
+    "tell", "show", "give", "get", "got", "list", "find", "know", "want",
+    "need", "please", "say", "said", "ask", "check", "let", "make", "made",
+    "all", "any", "some", "none", "each", "every", "either", "neither",
+    "and", "or", "but", "if", "then", "than", "so", "as", "of", "in", "on",
+    "at", "for", "to", "from", "by", "with", "without", "about", "into",
+    "over", "under", "between", "through", "against", "per", "via",
+    "not", "no", "nor", "yes", "only", "just", "also", "too", "very",
+    "currently", "now", "available", "still", "already", "yet",
+    "more", "most", "less", "least", "much", "many", "few", "several",
+    "new", "old", "same", "other", "another", "such", "own",
+    "number", "count", "total", "value", "detail", "details", "data",
+    "thing", "things", "stuff", "kind", "type", "sort",
+    # temporal vocabulary — consumed by the date parser; rescuing them as
+    # values (e.g. 'yesterday' -> 'Yes' via prefix) is always wrong
+    "today", "yesterday", "tomorrow", "day", "days", "daily",
+    "week", "weeks", "weekly", "month", "months", "monthly",
+    "year", "years", "yearly", "quarter", "quarters", "quarterly",
+    "date", "dates", "time", "period", "range", "ago", "before", "after",
+    "last", "next", "previous", "past", "recent", "since", "until", "till",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+    "sunday", "january", "february", "march", "april", "june", "july",
+    "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct",
+    "nov", "dec",
+}
+
+
+def _field_naming_words(
+    cfg: Dict[str, Any], columns: Dict[str, Any]
+) -> Set[str]:
+    """Words/phrases that NAME a field — never a filter value.
+
+    'design' is a dimension alias; rescuing it as producttypename='Designer
+    Pendant' silently corrupts 'top 5 design ...' questions. Same for column
+    names, filter aliases, metric labels/aliases, and generic routing terms.
+    """
+    names: Set[str] = set()
+    for cname, meta in columns.items():
+        names.add(cname.lower())
+        if isinstance(meta, dict):
+            sql = (meta.get("sql") or "").strip().lower()
+            if sql:
+                names.add(sql)
+            for a in (meta.get("aliases") or []):
+                names.add(str(a).strip().lower())
+            for a in ((meta.get("filter") or {}).get("aliases") or []):
+                names.add(str(a).strip().lower())
+            lbl = (meta.get("label") or "").strip().lower()
+            if lbl:
+                names.add(lbl)
+    for a in (cfg.get("dimension_aliases") or {}):
+        names.add(str(a).strip().lower())
+    for a in (cfg.get("filter_key_map") or {}):
+        names.add(str(a).strip().lower())
+    for mkey, meta in (cfg.get("metric_catalog") or {}).items():
+        names.add(str(mkey).lower())
+        if isinstance(meta, dict):
+            lbl = (meta.get("label") or "").strip().lower()
+            if lbl:
+                names.add(lbl)
+            for a in meta.get("aliases") or []:
+                names.add(str(a).strip().lower())
+    for skey in (cfg.get("special_metrics") or {}):
+        names.add(str(skey).lower())
+    try:
+        from app.services.column_registry import get_generic_routing_terms
+        names |= get_generic_routing_terms()
+    except Exception:
+        pass
+    # Expand to individual words too — 'job no' / 'order type' phrases and
+    # their parts ('order', 'type') are all field-naming, not values.
+    words = set(names)
+    for phrase in list(names):
+        words.update(re.findall(r"[a-z0-9]+", phrase))
+    return names | {w for w in words if len(w) >= 3}
+
+
+def retarget_misplaced_filters(question: str, parsed: "ParseResult") -> None:
+    """Move misplaced qualifiers onto the column their value belongs to.
+
+    The LLM parks unknown qualifier words on whichever column it knows best
+    (``department LIKE '%RND%'`` when RND is an order-type value; 'repair'
+    dropped entirely). For each simple predicate in ai_where the literal is
+    checked against EVERY column's vocabulary (canonical + live masters):
+    when it belongs to exactly one other column, the clause is removed and a
+    structured filter is injected — which then flows through
+    validated_filters/canonical normalization like any parser-produced
+    filter. A second pass scans the question for vocabulary values that
+    appear in no filter and no ai_where literal, rescuing dropped qualifiers.
+    Ambiguous matches (two columns claim the word) are left untouched.
+    """
+    from app.services.master_data import find_column_for_value
+
+    report_key = parsed.report_key
+    cfg = _COLUMN_REGISTRY.get(report_key, {})
+    columns = cfg.get("columns", {}) or {}
+    if not columns:
+        return
+
+    key_by_name: Dict[str, str] = {}
+    for name, meta in columns.items():
+        if isinstance(meta, dict):
+            key_by_name[name.lower()] = name
+            sql = (meta.get("sql") or "").lower()
+            if sql:
+                key_by_name.setdefault(sql, name)
+    # Alias spellings too — the LLM writes operands like `jobtype` where the
+    # column is actually named `orders` (order_report). Real column names were
+    # registered first so aliases can never shadow them.
+    def _alias_forms(a: str):
+        a = a.strip().lower()
+        return (a, a.replace("_", "").replace(" ", ""))
+    for name, meta in columns.items():
+        if not isinstance(meta, dict):
+            continue
+        for a in ((meta.get("filter") or {}).get("aliases") or []):
+            for form in _alias_forms(str(a)):
+                key_by_name.setdefault(form, name)
+    for a, t in (cfg.get("dimension_aliases") or {}).items():
+        if t in columns:
+            for form in _alias_forms(str(a)):
+                key_by_name.setdefault(form, t)
+    for a, t in (cfg.get("filter_key_map") or {}).items():
+        if t in columns:
+            for form in _alias_forms(str(a)):
+                key_by_name.setdefault(form, t)
+
+    # Column -> filter key that reaches it. Filter keys must come from
+    # filter_key_map (validated_filters only allows those aliases); a column
+    # with its own `filter` block is reachable under its own name.
+    fkm = cfg.get("filter_key_map", {}) or {}
+    col_to_key: Dict[str, str] = {}
+    for alias, target in fkm.items():
+        if target not in ("_date", "_name_filter"):
+            col_to_key.setdefault(target, alias)
+
+    def filter_key_for(col: str) -> Optional[str]:
+        if col in col_to_key:
+            return col_to_key[col]
+        return col if isinstance(columns.get(col), dict) and columns[col].get("filter") else None
+
+    def resolve_col(operand: str) -> Optional[str]:
+        refs = re.findall(r"DI\.(\w+)", operand, re.IGNORECASE)
+        toks = re.findall(r"\w+", operand)
+        ident = (refs[-1] if refs else (toks[-1] if toks else "")).lower()
+        return key_by_name.get(ident)
+
+    # --- pass 1: retarget ai_where literals --------------------------------
+    ai_where = (parsed.ai_where or "").strip()
+    if ai_where:
+        kept, changed = [], False
+        for clause in _split_top_level_and(ai_where):
+            m = _PREDICATE_RE.match(clause)
+            if not m:
+                kept.append(clause)
+                continue
+            operand = m.group("operand")
+            stated = resolve_col(operand)
+            op = m.group("op").upper()
+            negated = op in ("<>", "!=", "NOT IN", "NOT LIKE")
+            lits = [
+                lit.replace("''", "'").strip().strip("%").strip()
+                for lit in re.findall(r"'((?:''|[^'])*)'", m.group("lits"))
+            ]
+            # Unquoted numeric literals (`has_quotation = 1`) — the LLM treats
+            # Yes/No CASE columns as bit flags.
+            lits += re.findall(
+                r"\d+", re.sub(r"'(?:''|[^'])*'", "", m.group("lits"))
+            )
+            targets = set()
+            for lit in lits:
+                hit = find_column_for_value(report_key, lit)
+                if hit:
+                    targets.add(hit[0])
+            # Move to a structured filter when (a) the literal belongs to a
+            # different column's vocabulary, or (b) the stated column can't
+            # appear in a WHERE at all (computed with subquery / not_in_where)
+            # — bare `priority LIKE '%High%'` would just be a SQL error.
+            stated_meta = columns.get(stated, {}) if stated else {}
+            stated_unwhereable = bool(
+                stated_meta.get("not_in_where")
+                or ("select" in str(stated_meta.get("dimension_expr") or stated_meta.get("de") or "").lower())
+            )
+            # `=`/`IN` on a computed column belongs in a structured filter —
+            # canonical/live normalization can then map values the LLM got
+            # wrong ('1' on a Yes/No CASE -> 'Yes'). LIKE keeps its expanded
+            # form in ai_where since substring match has no filter equivalent.
+            stated_computed_eq = bool(
+                stated_meta.get("computed") and op in ("=", "IN")
+            )
+            wrong_col = len(targets) == 1 and targets != {stated}
+            if not negated and (wrong_col or (stated and (stated_unwhereable or stated_computed_eq))):
+                tgt = next(iter(targets)) if wrong_col else stated
+                fkey = filter_key_for(tgt)
+                if fkey:
+                    for lit in lits:
+                        hit = find_column_for_value(report_key, lit)
+                        val = hit[1] if hit and hit[0] == tgt else lit
+                        if fkey not in parsed.filters:
+                            parsed.filters[fkey] = val
+                    changed = True
+                    logger.info(
+                        "retarget: moved %r from %s to column %s",
+                        lits, stated, tgt,
+                    )
+                    continue
+            # Normalize a bare operand to DI.<name> so guard 2c validates it
+            # and computed refs expand: `priority LIKE` -> `DI.priority LIKE`.
+            if stated and "DI." not in operand.upper():
+                meta = columns.get(stated, {})
+                target_name = stated if meta.get("computed") else (meta.get("sql") or stated)
+                clause = (
+                    clause[:m.start("operand")] + f"DI.{target_name}"
+                    + clause[m.end("operand"):]
+                )
+                changed = True
+            kept.append(clause)
+        if changed:
+            parsed.ai_where = " AND ".join(kept)
+
+    # --- pass 2: rescue qualifiers the LLM dropped entirely ----------------
+    used_cols = {resolve_col(m.group("operand"))
+                 for m in map(_PREDICATE_RE.match, _split_top_level_and(parsed.ai_where or ""))
+                 if m}
+    used_cols.discard(None)
+    for fkey in parsed.filters:
+        used_cols.add(fkm.get(fkey.lower(), fkey))
+    # Snapshot of columns actually filtered (ai_where operands + filters).
+    filtered_cols = set(used_cols)
+    # The group-by dimension's own vocabulary isn't a "dropped qualifier" —
+    # "orders by sold pending" must not gain a SoldPending='sold' filter.
+    dim_col = resolve_col(parsed.dimension) if parsed.dimension else None
+    if dim_col:
+        used_cols.add(dim_col)
+    covered_words = set()
+    for fval in parsed.filters.values():
+        covered_words.update(re.findall(r"[a-z0-9]+", str(fval).lower()))
+    for lit in re.findall(r"'((?:''|[^'])*)'", parsed.ai_where or ""):
+        covered_words.update(re.findall(r"[a-z0-9]+", lit.replace("%", " ").lower()))
+
+    # Rescue stop-set: question scaffolding + temporal words (already consumed
+    # by the date parser) are never rescued. Field-NAMING words ('design' is a
+    # dimension alias, not a value) are blocked from *containment* matches —
+    # 'design' -> producttypename 'Designer Pendant' corrupts the question —
+    # but an exact value hit still wins ('sales order' is a dim alias AND the
+    # IsCompanyJob value 'Sales Order').
+    field_names = _field_naming_words(cfg, columns)
+    words = re.findall(r"[a-z0-9&.'-]+", (question or "").lower())
+    for n in (3, 2, 1):
+        for i in range(len(words) - n + 1):
+            phrase = " ".join(words[i:i + n]).strip(".'-")
+            if len(phrase) < 3 or phrase in _RESCUE_STOPWORDS:
+                continue
+            hit = find_column_for_value(
+                report_key, phrase, exclude=used_cols, allow_long_needle=False
+            )
+            if not hit:
+                continue
+            col, val = hit
+            if phrase in field_names and val.lower() != phrase:
+                continue  # field-named word, fuzzy hit — almost surely wrong
+            if covered_words & set(re.findall(r"[a-z0-9]+", val.lower())):
+                continue  # the matched value's own words are already filtered
+            fkey = filter_key_for(col)
+            if not fkey or fkey in parsed.filters:
+                continue
+            parsed.filters[fkey] = val
+            used_cols.add(col)
+            covered_words.update(re.findall(r"[a-z0-9]+", val.lower()))
+            logger.info("retarget: rescued dropped qualifier %r -> %s=%r", phrase, col, val)
+
+    # --- pass 3: collapse a filtered question's redundant dimension --------
+    # "total products in filing department" parsed as dim=department +
+    # department~filing returns only the TOP filing stage under limit=1
+    # (Filing-Issue 128) instead of the whole-department total. A scoped
+    # question with no breakdown marker (by/per/each/wise) and no ranking
+    # marker (top/best/…) wants the scalar — drop the dimension.
+    if dim_col and filtered_cols and not re.search(
+        r"\b(by|per|each|wise|breakdown|breakup|vs|versus|top|best|worst|"
+        r"largest|smallest|most|least|highest|lowest|leading|bottom)\b",
+        (question or "").lower(),
+    ) and (dim_col in filtered_cols or (parsed.limit or 1) <= 1):
+        logger.info("retarget: dropped redundant dimension %r", parsed.dimension)
+        parsed.dimension = None
 
 
 class ParseResult:
@@ -248,8 +661,13 @@ class ParseResult:
         self.clarify: Optional[str] = data.get("clarify")
         self.extra_metrics: List[str] = data.get("extra_metrics", []) or []
         self.intent: Optional[str] = data.get("intent")
-        self.confidence: float = max(0.0, min(1.0, float(data.get("confidence", 0.8) or 0.8)))
+        _conf = data.get("confidence")
+        self.confidence: float = max(0.0, min(1.0, float(_conf if _conf is not None else 0.8)))
+        # The LLM's own confidence, preserved separately — finalize_query
+        # overwrites `confidence` with the routing-source score.
+        self.model_confidence: float = self.confidence
         self.alternatives: List[Dict[str, Any]] = data.get("alternatives", []) or []
+        self.ai_where_dropped: bool = False  # set when validation nullifies a supplied clause
         self.raw: Dict[str, Any] = data
 
     def to_intent_spec(self) -> IntentSpec:
@@ -369,6 +787,11 @@ class ParseResult:
         # Add AI-generated WHERE clause (validated against column registry)
         if self.ai_where and self.ai_where.strip():
             validated = validate_ai_where(self.ai_where.strip(), self.report_key)
+            if not validated:
+                # The LLM supplied a filter that failed validation — the query
+                # is now running UNFILTERED. Flag it so the answer can say so
+                # instead of silently returning grand totals.
+                self.ai_where_dropped = True
             if validated:
                 # The LLM often repeats a name filter in ai_where
                 # ('customer X' → filter + CustomerFullName LIKE). The extra
@@ -417,158 +840,3 @@ class ParseResult:
                 f"filters={self.filters}, date={self.date_filter})")
 
 
-def resolve_to_sp_params(parsed: ParseResult, report_cols: Dict[str, Any]) -> Dict[str, Any]:
-    """Resolve ParseResult to SP parameters using report_columns.json.
-
-    Returns dict with: MetricKey, MetricExpr, Dimension, DimensionExpr,
-    FilterHeader, FilterValue, Aggregation, Limit, FilterStartDate, FilterEndDate
-    """
-    report_cfg = report_cols.get(parsed.report_key, {})
-    columns = report_cfg.get("columns", {})
-    special_metrics = report_cfg.get("special_metrics", {})
-
-    # Resolve metric — look up by key name, then by SQL name as fallback
-    metric_key = parsed.metric
-    metric_expr = ""
-    col = columns.get(metric_key)
-    if col is None:
-        # Fallback: match by SQL column name
-        for cname, cmeta in columns.items():
-            if cmeta.get("sql", "").lower() == metric_key.lower():
-                col = cmeta
-                metric_key = cname
-                break
-    if col is not None and not col.get("filter_only"):
-        if col.get("computed") and col.get("metric_expr"):
-            metric_expr = col["metric_expr"]
-        elif col.get("computed") and col.get("dimension_expr"):
-            # Computed dimension used as metric (e.g. CustomerFullName in single-record lookup)
-            metric_expr = col["dimension_expr"]
-        else:
-            sql = col.get("sql", metric_key)
-            if not sql:
-                metric_key = "Amount"
-                metric_expr = "CONVERT(DECIMAL(38,2),ISNULL(DI.design_TotalAmouont,0))"
-            else:
-                metric_expr = f"ISNULL(DI.{sql},0)"
-    elif col is not None and col.get("filter_only"):
-        metric_key = "Amount"
-        metric_expr = "CONVERT(DECIMAL(38,2),ISNULL(DI.design_TotalAmouont,0))"
-    elif metric_key in special_metrics:
-        metric_expr = special_metrics[metric_key].get("sql", metric_key)
-
-    # Resolve dimension — look up by key name, then by SQL name as fallback
-    dimension = parsed.dimension or ""
-    dimension_expr = ""
-    if dimension:
-        col = columns.get(dimension)
-        if col is None:
-            for cname, cmeta in columns.items():
-                if cmeta.get("sql", "").lower() == dimension.lower():
-                    col = cmeta
-                    dimension = cname
-                    break
-        if col is not None and not col.get("filter_only"):
-            if col.get("computed") and col.get("dimension_expr"):
-                dimension_expr = col["dimension_expr"]
-            else:
-                sql = col.get("sql", dimension)
-                if not sql:
-                    dimension = ""
-                    dimension_expr = ""
-                else:
-                    dimension_expr = f"ISNULL(DI.{sql},'')"
-        elif col is not None and col.get("filter_only"):
-            dimension = ""
-            dimension_expr = ""
-
-    # Resolve filters — map filter names to SP filter headers
-    filter_headers = []
-    filter_values = []
-
-    # Build a per-report filter map from filter_key_map + column metadata.
-    # filter_key_map targets can be:
-    #   - a physical column name  -> use that column's sql
-    #   - a name_filter key     -> use the SQL expression from name_filter_map
-    #   - "_date"               -> handled separately as date filters
-    # Physical column names and their aliases are also registered directly.
-    _FILTER_MAP: Dict[str, str] = {}
-    name_filter_map = report_cfg.get("name_filter_map", {})
-    filter_key_map = report_cfg.get("filter_key_map", {})
-    for alias, target in filter_key_map.items():
-        if target == "_date":
-            continue
-        if target in name_filter_map:
-            _FILTER_MAP[alias.lower()] = name_filter_map[target]
-            continue
-        target_col = columns.get(target, {})
-        if isinstance(target_col, dict):
-            sql = target_col.get("sql", target)
-        else:
-            sql = target
-        _FILTER_MAP[alias.lower()] = sql
-
-    # Also allow direct column names and aliases
-    for cname, cmeta in columns.items():
-        sql = cmeta.get("sql", cname)
-        _FILTER_MAP.setdefault(cname.lower(), sql)
-        f = cmeta.get("filter", {})
-        if isinstance(f, dict):
-            for calias in f.get("aliases", []):
-                _FILTER_MAP.setdefault(calias.lower(), sql)
-
-    for fname, fval in parsed.filters.items():
-        # Check merged map first
-        header = _FILTER_MAP.get(fname.lower())
-        if header is None:
-            # Try direct column lookup
-            col = columns.get(fname)
-            if col:
-                header = col.get("sql", fname)
-            else:
-                # Try case-insensitive match
-                for cname, cmeta in columns.items():
-                    if cname.lower() == fname.lower():
-                        header = cmeta.get("sql", cname)
-                        break
-                else:
-                    header = fname
-        filter_headers.append(header)
-        filter_values.append(str(fval))
-
-    # Resolve date filter
-    date_start = ""
-    date_end = ""
-    if parsed.date_filter:
-        preset = parsed.date_filter.get("preset", "")
-        if preset == "today":
-            date_start = "TODAY"
-            date_end = "TODAY"
-        elif preset == "yesterday":
-            date_start = "YESTERDAY"
-            date_end = "YESTERDAY"
-        elif preset == "this_month":
-            date_start = "THIS_MONTH_START"
-            date_end = "THIS_MONTH_END"
-        elif preset == "last_month":
-            date_start = "LAST_MONTH_START"
-            date_end = "LAST_MONTH_END"
-        elif preset == "this_year":
-            date_start = "THIS_YEAR_START"
-            date_end = "THIS_YEAR_END"
-        elif preset == "this_week":
-            date_start = "THIS_WEEK_START"
-            date_end = "THIS_WEEK_END"
-
-    return {
-        "MetricKey": metric_key,
-        "MetricExpr": metric_expr,
-        "Dimension": dimension,
-        "DimensionExpr": dimension_expr,
-        "Aggregation": parsed.aggregation,
-        "Limit": parsed.limit,
-        "FilterHeader": "#".join(filter_headers),
-        "FilterValue": "#".join(filter_values),
-        "FilterStartDate": date_start,
-        "FilterEndDate": date_end,
-    }

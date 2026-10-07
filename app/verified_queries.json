@@ -20,6 +20,36 @@
       "procedure": "DynamicReport_LLMChatbeta",
       "expected_result_type": "breakdown",
       "verified": true
+    },
+    {
+      "question": "aaj ka total sale kitna hai",
+      "intent": "sales_report",
+      "report_key": "sales_report",
+      "entities": {"date_range": "today"},
+      "query_plan": {"metric": "Amount", "aggregation": "sum", "date_filter": {"preset": "today"}, "limit": 1},
+      "procedure": "DynamicReport_LLMChatbeta",
+      "expected_result_type": "aggregate",
+      "verified": true
+    },
+    {
+      "question": "pichle mahine customer wise sales dikhao",
+      "intent": "sales_report",
+      "report_key": "sales_report",
+      "entities": {"date_range": "last_month"},
+      "query_plan": {"metric": "Amount", "aggregation": "sum", "dimension": "CustomerFullName", "sort": "desc", "limit": 5, "date_filter": {"preset": "last_month"}},
+      "procedure": "DynamicReport_LLMChatbeta",
+      "expected_result_type": "breakdown",
+      "verified": true
+    },
+    {
+      "question": "is saal sabse zyada sale kisne ki",
+      "intent": "sales_report",
+      "report_key": "sales_report",
+      "entities": {"date_range": "this_year"},
+      "query_plan": {"metric": "Amount", "aggregation": "sum", "dimension": "SalesRep", "sort": "desc", "limit": 5, "date_filter": {"preset": "this_year"}},
+      "procedure": "DynamicReport_LLMChatbeta",
+      "expected_result_type": "breakdown",
+      "verified": true
     }
   ]
 }

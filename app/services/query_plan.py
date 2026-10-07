@@ -77,6 +77,10 @@ class QueryPlan(BaseModel):
     complexity: QueryComplexity = QueryComplexity.simple
     steps: List[QueryStep] = Field(default_factory=list)
     results_limited: bool = False
+    # Filter values rejected as invalid for their field (e.g. a metric word
+    # leaked into 'categoryname'). Tracked so the answer can disclose the drop
+    # instead of silently returning unfiltered totals.
+    dropped_filters: List[str] = Field(default_factory=list)
 
     @classmethod
     def from_parse_result(cls, parsed: Any, confidence: Optional[float] = None) -> "QueryPlan":
@@ -119,6 +123,22 @@ class QueryPlan(BaseModel):
             if resolved_metric:
                 self.metric = resolved_metric
         if self.metric not in valid_metrics:
+            # Bare aggregation words in the metric slot ('count', 'sum') —
+            # the LLM emitted the operation as the metric name. Map to the
+            # report's count-typed metric or its default instead of erroring.
+            low = self.metric.strip().lower()
+            if low in ("count", "number", "counttotal", "records", "rows"):
+                count_key = next(
+                    (k for k, m in metrics.items()
+                     if str((m or {}).get("type", "")).lower() == "count"),
+                    "total_count" if "total_count" in valid_metrics else None,
+                )
+                if count_key:
+                    self.metric = count_key
+                    self.aggregation = "count"
+            elif low in ("sum", "total", "amount", "avg", "average", "mean"):
+                self.metric = cfg.get("default_metric", "Amount")
+        if self.metric not in valid_metrics:
             raise ValueError(f"Unknown metric {self.metric!r} for {self.report_key}")
         resolved_extras = []
         for extra in self.extra_metrics:
@@ -155,6 +175,14 @@ class QueryPlan(BaseModel):
             if resolved_dim:
                 self.dimension = resolved_dim
             meta = columns.get(self.dimension)
+            if not meta:
+                # The LLM varies casing ('JobType' vs 'jobtype') — resolve
+                # column names case-insensitively and canonicalize.
+                dim_l = self.dimension.lower()
+                match = next((n for n in columns if n.lower() == dim_l), None)
+                if match:
+                    self.dimension = match
+                    meta = columns[match]
             if not meta or meta.get("filter_only") or meta.get("not_available"):
                 raise ValueError(f"Invalid dimension {self.dimension!r} for {self.report_key}")
         if self.dimension and self.dimension == self.metric:
@@ -219,13 +247,24 @@ class QueryPlan(BaseModel):
         result = {}
         for item in self.filters:
             if _is_invalid(item.field, item.value):
+                self.dropped_filters.append(item.field)
                 continue
             value = item.value
             if isinstance(value, str):
                 # Canonicalize to the field's configured vocabulary (e.g.
                 # 'polishing' -> 'Polish' so LIKE matches 'Pre Polish-Issue').
                 canon = get_canonical_values(self.report_key, item.field)
-                value = canon.get(value.lower().strip(), value)
+                mapped = canon.get(value.lower().strip())
+                if mapped is not None:
+                    value = mapped
+                else:
+                    # Live vocabulary fallback: match against the tenant's real
+                    # master values fetched by the /masters bootstrap (e.g.
+                    # 'rnd' -> 'RND Order'), only when the match is unambiguous.
+                    from app.services.master_data import match_master_value
+                    from app.services.column_registry import _REGISTRY as _CREG
+                    target = _CREG.get(self.report_key, {}).get("filter_key_map", {}).get(item.field, item.field)
+                    value = match_master_value(self.report_key, str(target), value)
             result[item.field] = value
         if self.date_range:
             result.update(self.date_range.resolved())

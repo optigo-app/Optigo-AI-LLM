@@ -82,6 +82,19 @@ QUESTIONS = {
         "what is trending in our sales",
         "which category is not performing",
         "show me something interesting about sales",
+        # hinglish (roman hindi — function words only; domain words stay english)
+        "aaj ka total sale kitna hai",
+        "pichle mahine customer wise sales dikhao",
+        "is saal sabse zyada sale kisne ki",
+        "top 5 design kaunsi hai is mahine",
+        "pichle hafte ka gold weight batao",
+        "customer ThGems ka total sales dikhao",
+        "sabse zyada kharch karne wala customer kaun hai",
+        "aaj kitne bill bane",
+        "udhaar baki kitna hai",
+        "is mahine ki bikri pichle mahine se compare karo",
+        "har category ki sales dikhao",
+        "sabse kam sale kis branch mein hui",
     ],
     # ------------------------------------------------------------------
     # ORDER — users want pipeline insight, not the raw grid.
@@ -202,6 +215,10 @@ QUESTIONS = {
         "how much work is pending in polishing",
         "give me production pipeline",
         "what is our factory workload",
+        # hinglish
+        "abhi kitne jobs pending hain",
+        "sabse zyada jobs kis department mein hain",
+        "pichle mahine ka job cost department wise dikhao",
     ],
     # ------------------------------------------------------------------
     # TAX — compliance/cross-check questions.
@@ -281,6 +298,9 @@ EXPECTED_OVERRIDE = {
     "higest tax bill": "sales_report",
     "wich bill has higest tax": "sales_report",
     "which invoice has highest tax": "sales_report",
+    # Sales has no outstanding/dues metric — pending-work questions land on
+    # order_report's remaining-quantity.
+    "udhaar baki kitna hai": "order_report",
 }
 
 

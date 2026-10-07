@@ -55,7 +55,9 @@ class TestRegistrySync(unittest.TestCase):
         schema = derive_filter_schema("tax_report")
         self.assertIn("start_date", schema)
         self.assertIn("end_date", schema)
-        self.assertEqual(len(schema), 2)
+        for key in ("bill_mode", "billmode", "sale_mode", "tax_mode", "taxfilter", "tax_status"):
+            self.assertIn(key, schema)
+        self.assertEqual(len(schema), 10)
 
     def test_no_manual_filter_schema_in_registry(self):
         for entry in self.reg_data.get("reports", []):

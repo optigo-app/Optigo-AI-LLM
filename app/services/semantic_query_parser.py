@@ -45,7 +45,6 @@ from app.services.metric_validator import (  # noqa: F401
 from app.services.parse_result import (  # noqa: F401
     validate_ai_where,
     ParseResult,
-    resolve_to_sp_params,
 )
 from app.services.prompt_builder import (  # noqa: F401
     _build_system_prompt,
@@ -90,6 +89,23 @@ _PARSE_RESPONSE_FORMAT = {
         },
     },
 }
+
+
+def _parse_failure_result(report_name: str = "") -> ParseResult:
+    """Fail-safe result when the LLM call errors out entirely.
+
+    A fabricated ``confidence=0.8 + Amount/sum`` default would sail through the
+    clarify gate and return a grand total for a question that was never
+    understood. ``confidence=0`` + ``clarify`` makes the failure explicit
+    instead of answering with made-up numbers.
+    """
+    return ParseResult({
+        "report_key": report_name or "sales_report",
+        "metric": "Amount",
+        "aggregation": "sum",
+        "confidence": 0.0,
+        "clarify": "I couldn't understand that question — please rephrase it.",
+    })
 
 
 async def parse_query(
@@ -248,7 +264,7 @@ async def parse_query(
         return parsed
     except json.JSONDecodeError as exc:
         logger.error("Semantic parse JSON decode error: %s | raw: %s", exc, result.text[:200])
-        return ParseResult({"report_key": report_name or "sales_report", "metric": "Amount", "aggregation": "sum"})
+        return _parse_failure_result(report_name)
     except Exception as exc:
         logger.error("Semantic parse error: %s", exc)
-        return ParseResult({"report_key": report_name or "sales_report", "metric": "Amount", "aggregation": "sum"})
+        return _parse_failure_result(report_name)

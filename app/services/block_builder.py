@@ -192,12 +192,14 @@ def build_simple_blocks(
 
     if value is None and record_count == 0:
         blocks.append({"type": "text", "content": f"No {label.lower()} found for the selected filters."})
-        blocks.append({"type": "suggestions", "items": [
+        _no_data_suggests = [
             "Try a different date range",
             f"Overall total {label.lower()} without filters",
             "What were the total sales this month?",
             "Top 5 customers by revenue",
-        ]})
+        ]
+        blocks.append({"type": "suggestions", "items": _no_data_suggests,
+                       "options": _chip_options(_no_data_suggests)})
         if source_report:
             blocks.append({"type": "sources", "items": [source_report]})
         if assumptions:
@@ -610,6 +612,49 @@ def build_error_blocks(message: str) -> List[Dict[str, Any]]:
     return [{"type": "error", "content": message}]
 
 
+def _chip_options(items: List[str]) -> List[Dict[str, Any]]:
+    """Turn suggestion strings into structured options carrying send_message
+    actions. The click contract is explicit ({type, payload}) rather than
+    'send the label text' — labels stay free to change without breaking
+    behavior."""
+    return [
+        {
+            "label": item,
+            "action": {
+                "type": "send_message",
+                "handler": "server",
+                "payload": {"message": item},
+                "display": item,
+            },
+        }
+        for item in items
+    ]
+
+
+# Entity kinds offered by the disambiguation widget. `inject` is the word the
+# server prefixes to the entity value when reconstructing the question — it
+# matches the filter_key_map aliases so the deterministic field extractor
+# lands the filter without depending on the LLM. Ordered by jewellery-ERP
+# likelihood: codes like TR62/JS4 are design or SKU numbers far more often
+# than they are brands or branches.
+ENTITY_OPTION_INJECT = {
+    "design": "design",
+    "sku": "sku",
+    "customer": "customer",
+    "invoice": "invoice",
+    "salesperson": "sales rep",
+    "brand": "brand",
+    "category": "category",
+    "branch": "branch",
+}
+
+# Display labels for option ids that .title() would mangle.
+ENTITY_OPTION_LABELS = {
+    "sku": "SKU",
+    "salesperson": "Salesperson",
+}
+
+
 def build_date_range_input_block(content: str) -> Dict[str, Any]:
     return {
         "type": "date_range_input",
@@ -625,24 +670,42 @@ def build_date_range_input_block(content: str) -> Dict[str, Any]:
         ],
         "submit_label": "Apply date range",
         "submit_message_template": "Use date range {start_date} to {end_date}",
+        # Structured path — /chat/action applies these to the pending question.
+        "submit_action": {
+            "type": "set_date_range",
+            "handler": "server",
+            "payload": {"start_field": "start_date", "end_field": "end_date"},
+            "display": "Use date range {start_date} to {end_date}",
+        },
+        "blocking": True,
     }
 
 
 def build_entity_choice_block(value: str, content: str) -> Dict[str, Any]:
+    options = []
+    for option_id, inject in ENTITY_OPTION_INJECT.items():
+        label = ENTITY_OPTION_LABELS.get(option_id, option_id.title())
+        options.append({
+            "label": label,
+            "value": option_id,
+            # Legacy fallback for frontends that still send option.message.
+            "message": f"{label}: {value}",
+            "action": {
+                "type": "select_option",
+                "handler": "server",
+                "payload": {"option_id": option_id, "value": value},
+                "display": f"{label}: {value}",
+            },
+        })
     return {
         "type": "choice_input",
         "title": "Confirm field",
         "content": content,
         "field": "entity_type",
         "value": value,
-        "options": [
-            {"label": "Customer", "value": "customer", "message": f"Customer: {value}"},
-            {"label": "Salesperson", "value": "salesperson", "message": f"Salesperson: {value}"},
-            {"label": "Brand", "value": "brand", "message": f"Brand: {value}"},
-            {"label": "Branch", "value": "branch", "message": f"Branch: {value}"},
-            {"label": "Category", "value": "category", "message": f"Category: {value}"},
-        ],
+        "options": options,
         "allow_custom": False,
+        "blocking": True,
     }
 
 
@@ -692,6 +755,9 @@ def build_clarify_blocks(report_key: str) -> List[Dict[str, Any]]:
             "type": "clarify",
             "content": f"I'm not sure what you're asking about. Could you be more specific?",
             "suggestions": suggestions,
+            "options": _chip_options(suggestions),
+            # Generic clarify — the user should still be able to type freely.
+            "blocking": False,
         },
         {"type": "text", "content": f"Sources: {report_title}"},
     ]
@@ -723,7 +789,8 @@ def build_no_data_blocks(label: str, filters: Dict[str, Any], source_report: str
         "Gold amount by branch",
     ]
 
-    blocks.append({"type": "suggestions", "items": suggestions})
+    blocks.append({"type": "suggestions", "items": suggestions,
+                   "options": _chip_options(suggestions)})
 
     if source_report:
         blocks.append({"type": "sources", "items": [source_report]})

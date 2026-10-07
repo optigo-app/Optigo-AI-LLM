@@ -38,6 +38,12 @@ _FIELD_VALUE_STOP_WORDS = {
     "well", "more", "less", "vs", "versus", "with", "without", "from",
 }
 
+# Column names that are time buckets, not attributes — '_apply_attribute_lookup'
+# must never adopt these as the metric ("...in this month" is a date qualifier).
+_TIME_DIMENSION_WORDS = {
+    "month", "year", "week", "date", "entrydate", "jobdate", "day", "quarter",
+}
+
 
 def _apply_explicit_field_filters(parsed: ParseResult, question: str) -> None:
     """Extract explicit '<field> <value> <metric>' phrases into governed filters.
@@ -97,9 +103,9 @@ def _apply_explicit_field_filters(parsed: ParseResult, question: str) -> None:
         parsed.intent = None
 
 
-_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
+_WHY_RE = re.compile(r"\b(why|reasons?|because)\b", re.IGNORECASE)
 _WHY_PERF_RE = re.compile(
-    r"\b(perform(?:ing|ed)?|well|best|top|selling|sold|success(?:ful)?|high(?:est)?|"
+    r"\b(perform\w*|well|best|top|selling|sold|success(?:ful)?|high(?:est)?|"
     r"increas\w*|growth|drop(?:ped)?|low(?:est)?|poor|worst|better|most|least)\b",
     re.IGNORECASE,
 )
@@ -112,12 +118,19 @@ _WHY_ENTITY_SQL_TOKENS = {
 }
 
 
-def _why_filtered_entity(parsed: ParseResult) -> Optional[str]:
-    """Which entity did the question filter on (design, customer, brand...)?"""
+def _why_filtered_entity(parsed: ParseResult, extra_filters: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Which entity did the question filter on (design, customer, brand...)?
+
+    ``extra_filters`` covers entity scope inherited from the previous turn —
+    the context resolver rewrites 'this design' to 'design 794' but the
+    previous-filters merge happens after the deterministic overrides run.
+    """
     keys = {str(k).lower() for k in (parsed.filters or {})}
-    for e in ("design", "sku", "barcode", "brand", "category", "customer", "sales rep", "branch", "metal", "job"):
-        if e in keys:
-            return e
+    keys |= {str(k).lower() for k in (extra_filters or {})}
+    for e in ("design", "designno", "designcode", "sku", "barcode", "brand",
+              "category", "customer", "sales rep", "branch", "metal", "job"):
+        if e in keys or any(k.startswith(e) for k in keys):
+            return "design" if e in ("designno", "designcode") else e
     ai = (parsed.ai_where or "").lower()
     for entity, tokens in _WHY_ENTITY_SQL_TOKENS.items():
         if any(t in ai for t in tokens):
@@ -471,10 +484,15 @@ def _apply_attribute_lookup(parsed: ParseResult, question: str) -> None:
 
     if not attr:
         # Rewritten phrasing: 'customer code vidsy customer type' — the
-        # question ends with the attribute's own alias.
+        # question ends with the attribute's own alias. Date-grouping columns
+        # are excluded: a trailing 'this month'/'in 2025' is a time qualifier,
+        # not an attribute lookup ('top 5 design ... in this month' would
+        # otherwise corrupt metric=Amount -> metric='month').
         q_clean = q.rstrip(" ?.!")
         for cname, meta in columns.items():
             if str(meta.get("type", "")).lower() not in ("string", "text"):
+                continue
+            if str(meta.get("grp", "")).lower() == "date" or cname.lower() in _TIME_DIMENSION_WORDS:
                 continue
             if any(len(a) > 3 and q_clean.endswith(a) for a in _col_aliases(cname, meta)):
                 parsed.metric = cname
@@ -560,8 +578,11 @@ def _strip_date_predicates(parsed: ParseResult) -> None:
     ai = parsed.ai_where
     if not ai or not parsed.date_filter:
         return
-    kept = [c.strip() for c in re.split(r"\bAND\b", ai, flags=re.IGNORECASE)
-            if c.strip() and not _DATE_PREDICATE_RE.search(c)]
+    # Split on top-level AND only — a naive regex split breaks inside quoted
+    # literals ("LIKE '%A AND B%'") and nested parens, mangling name filters.
+    from app.services.parse_result import _split_top_level_and
+    kept = [c for c in _split_top_level_and(ai)
+            if not _DATE_PREDICATE_RE.search(c)]
     parsed.ai_where = " AND ".join(kept) or None
 
 
@@ -600,7 +621,11 @@ def _apply_ranking_overrides(parsed: ParseResult, question: str) -> None:
             parsed.sort = "desc"
 
 
-def _apply_why_breakdown(parsed: ParseResult, question: str) -> None:
+def _apply_why_breakdown(
+    parsed: ParseResult,
+    question: str,
+    previous_filters: Optional[Dict[str, Any]] = None,
+) -> None:
     """Turn 'why did <entity> perform well' into a governed driver breakdown.
 
     The governed pipeline cannot answer causal questions, but it CAN show what
@@ -609,15 +634,24 @@ def _apply_why_breakdown(parsed: ParseResult, question: str) -> None:
     into a metric+dimension ranking (structurally complete -> skips the
     low-confidence clarify) instead of returning a dead-end clarify.
     """
-    if parsed.dimension or not parsed.metric:
+    if not parsed.metric:
         return
     if not (_WHY_RE.search(question) and _WHY_PERF_RE.search(question)):
         return
-    entity = _why_filtered_entity(parsed)
+    entity = _why_filtered_entity(parsed, previous_filters)
     if not entity:
         return
     from app.services.column_registry import get_dimension_aliases
     aliases = get_dimension_aliases(parsed.report_key)
+    if parsed.dimension:
+        # A dimension equal to the filtered entity's own dimension is just
+        # the entity restated ('reasons for design 794' -> dim=designno) —
+        # replace it with the driver dimension. Any other dimension is real
+        # user intent ('why sales dropped month wise') — leave it alone.
+        cur = aliases.get(parsed.dimension.strip().lower(), parsed.dimension.strip())
+        entity_dim = aliases.get(entity) or aliases.get(entity + " identity")
+        if not entity_dim or cur.lower() != entity_dim.lower():
+            return
     # Explain with the *other* side of the sale: customer-filtered -> what they
     # bought (design); anything else -> who bought it (customer).
     pref = "design" if entity in ("customer", "client", "customer name") else "customer"
@@ -630,7 +664,11 @@ def _apply_why_breakdown(parsed: ParseResult, question: str) -> None:
     parsed.limit = parsed.limit if parsed.limit and parsed.limit > 1 else 10
 
 
-def _apply_deterministic_override(parsed: ParseResult, question: str) -> None:
+def _apply_deterministic_override(
+    parsed: ParseResult,
+    question: str,
+    previous_filters: Optional[Dict[str, Any]] = None,
+) -> None:
     det_spec = _detect_explicit_intent(question, parsed.report_key)
     report_cfg = _load_registry().get(parsed.report_key, {})
     default_metric = report_cfg.get("default_metric", "Amount")
@@ -656,12 +694,15 @@ def _apply_deterministic_override(parsed: ParseResult, question: str) -> None:
     _apply_explicit_dates(parsed, question)
     _strip_date_predicates(parsed)
     _apply_ranking_overrides(parsed, question)
-    _apply_why_breakdown(parsed, question)
+    _apply_why_breakdown(parsed, question, previous_filters)
     # Count words are enumerable — 'how many' is never a sum of Amount.
     # Skip when an intent rule already set the aggregation (e.g. units_sold
-    # is a conditional SUM, not a row count).
+    # is a conditional SUM, not a row count). 'How many <unit>' ('how many
+    # grams of gold') is a weight question — never a row count.
+    from app.services.metric_validator import _COUNT_OF_UNIT_RE
     if re.search(r"\b(how many|number of|count of)\b", question, re.IGNORECASE) \
             and parsed.aggregation == "sum" \
+            and not _COUNT_OF_UNIT_RE.search(question) \
             and not (det_spec and det_spec.aggregation):
         parsed.aggregation = "count"
     if re.search(r"\b(unique|distinct|different)\b", question, re.IGNORECASE) \
@@ -683,6 +724,35 @@ def _apply_deterministic_override(parsed: ParseResult, question: str) -> None:
         parsed.limit = max(parsed.limit or 1, 50)
 
 
+def _coerce_pinned_metric(plan: "QueryPlan") -> None:
+    """A frontend-pinned report must not hard-fail on an incompatible metric.
+
+    When the UI pins sales_report but the question semantics picked another
+    report's metric ('sales order jobs' -> QuotationJob), degrade to the
+    pinned report's count metric (count questions) or default metric instead
+    of 'Unknown metric' — the pin reflects where the user is looking.
+    """
+    cfg = _load_registry().get(plan.report_key, {})
+    cols = cfg.get("columns", {})
+    valid = set(cols) | set(cfg.get("metric_catalog", {})) | set(cfg.get("special_metrics", {}))
+    if plan.metric in valid:
+        return
+    from app.services.column_registry import resolve_metric_alias
+    if resolve_metric_alias(plan.report_key, plan.metric):
+        return
+    catalog = cfg.get("metric_catalog", {}) or {}
+    if plan.aggregation in ("count", "count_distinct"):
+        count_key = next(
+            (k for k, m in catalog.items()
+             if str((m or {}).get("type", "")).lower() == "count"),
+            "total_count" if "total_count" in valid else "",
+        )
+        if count_key:
+            plan.metric = count_key
+            return
+    plan.metric = cfg.get("default_metric", "Amount")
+
+
 def finalize_query(
     parsed: ParseResult,
     question: str,
@@ -700,7 +770,9 @@ def finalize_query(
         parsed.confidence = {
             "frontend": 1.0, "intent": 0.95, "keyword": 0.75, "context": 0.80,
         }.get(routing_source, 0.60)
-    _apply_deterministic_override(parsed, question)
+    _apply_deterministic_override(parsed, question, previous_filters)
+    from app.services.parse_result import retarget_misplaced_filters
+    retarget_misplaced_filters(question, parsed)
     lowered = question.lower()
     if not parsed.date_filter and any(term in lowered for term in ("growth", "compared with the previous", "compare with the previous")):
         parsed.date_filter = {"preset": "this_month"}
@@ -712,6 +784,8 @@ def finalize_query(
         if str(col_meta.get("type", "")).lower() not in ("string", "text"):
             parsed.aggregation = "sum"
     plan = parsed.to_query_plan(question)
+    if routing_source == "frontend":
+        _coerce_pinned_metric(plan)
     plan.validate_against_registry()
     parsed.metric = plan.metric
     parsed.dimension = plan.dimension
@@ -739,6 +813,45 @@ def finalize_query(
     )
 
 
+def _report_for_metric_shape(parsed: ParseResult, registry: Optional[Dict[str, Any]], question: str = "") -> str:
+    """Pick the report owning the parsed metric/dimension when the LLM left
+    report_key empty. Scores metric ownership (2) + dimension ownership (1);
+    ties fall through to keyword hits on the question, then registry order."""
+    from app.services.column_registry import (
+        get_dimension_aliases, get_report_keywords, resolve_metric_alias,
+    )
+    reg = _load_registry()
+    keys = [k for k in (registry or reg) if k in reg]
+    scored = []
+    for rk in keys:
+        cfg = reg.get(rk, {})
+        cols = cfg.get("columns", {})
+        valid = set(cols) | set(cfg.get("metric_catalog", {})) | set(cfg.get("special_metrics", {}))
+        score = 0
+        m = (parsed.metric or "")
+        if m and (m in valid or resolve_metric_alias(rk, m)):
+            score += 2
+        dim = (parsed.dimension or "").strip().lower()
+        if dim and (dim in {c.lower() for c in cols}
+                    or dim in get_dimension_aliases(rk)):
+            score += 1
+        scored.append((score, rk))
+    top = max((s for s, _ in scored), default=0)
+    if top <= 0:
+        return ""
+    tied = [rk for s, rk in scored if s == top]
+    if len(tied) == 1:
+        return tied[0]
+    # Tie-break on keyword hits in the question, then registry order.
+    ql = question.lower()
+    best_kw, best_rk = 0, tied[0]
+    for rk in tied:
+        kw = sum(1 for k in get_report_keywords(rk) if k and k.lower() in ql)
+        if kw > best_kw:
+            best_kw, best_rk = kw, rk
+    return best_rk
+
+
 async def plan_query(
     question: str,
     history: Optional[List[Dict[str, str]]] = None,
@@ -762,14 +875,33 @@ async def plan_query(
             selected_report = keyword_classify(question, registry) or ""
             if selected_report:
                 routing_source = "keyword"
-    parsed = await parse_query(question, history=history, token_usage=token_usage, report_name=selected_report)
+    # Keyword routing is a weak hint — single-word ties are common
+    # ('customer order total' hits both order and sales keywords). Parse
+    # against the FULL catalog so the LLM can pick a better report; only the
+    # high-precision routes (frontend pin, deterministic intent rules) lock
+    # the catalog to a single report.
+    parse_report = selected_report if routing_source in ("frontend", "intent") else ""
+    parsed = await parse_query(question, history=history, token_usage=token_usage, report_name=parse_report)
     report_aliases = {"sales_summary": "sales_report", "wip_summary": "wip_report"}
     parsed.report_key = report_aliases.get(parsed.report_key, parsed.report_key)
-    if selected_report:
+    if selected_report and routing_source == "keyword":
+        # The keyword pick never saw the question's semantics — a valid
+        # full-catalog choice from the LLM wins; an empty/hallucinated one
+        # falls back to the keyword route.
+        valid_keys = set(registry) if registry else set(_load_registry())
+        if parsed.report_key and parsed.report_key in valid_keys:
+            routing_source = "llm"
+        else:
+            parsed.report_key = selected_report
+    elif selected_report:
         if parsed.report_key and parsed.report_key != selected_report:
             parsed.alternatives = [{"intent": parsed.report_key, "confidence": 0.25}]
         parsed.report_key = selected_report
-    elif (not parsed.report_key or not parsed.report_key.strip()) and fallback_report:
-        parsed.report_key = fallback_report
-        routing_source = "context"
+    elif not (parsed.report_key or "").strip():
+        # LLM left the report blank — recover the report that owns the parsed
+        # metric/dimension rather than erroring on a well-formed parse.
+        resolved = fallback_report or _report_for_metric_shape(parsed, registry, question)
+        if resolved:
+            parsed.report_key = resolved
+            routing_source = "context"
     return finalize_query(parsed, question, previous_filters, routing_source)

@@ -1,7 +1,7 @@
 """Unit tests for conversation_store: session management, messages, filters."""
 
-import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -9,11 +9,11 @@ from app.services import conversation_store
 
 
 @pytest.fixture(autouse=True)
-def _temp_db(monkeypatch):
+def _temp_db(monkeypatch, tmp_path):
     """Use a temp directory for the conversation DB during tests."""
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
-        monkeypatch.setattr(conversation_store.settings, "dummy_db_path", os.path.join(tmpdir, "dummy.db"))
-        yield
+    monkeypatch.setattr(conversation_store, "_LOG_DIR", Path(tmp_path))
+    monkeypatch.setattr(conversation_store, "_table_ready", False)
+    yield
 
 
 class TestSessionManagement:

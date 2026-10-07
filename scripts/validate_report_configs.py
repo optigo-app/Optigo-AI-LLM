@@ -24,7 +24,7 @@ OPTIONAL_TOP_LEVEL_KEYS = {
     "report_keywords", "prompt_rules", "location_aliases", "party_type_rules",
     "chat_enabled", "fallback_intent", "name_filter_map", "date_column",
     "suggested_questions", "table_filters", "source_query_file",
-    "filter_invalid_values", "dimension_aliases",
+    "filter_invalid_values", "dimension_aliases", "masters",
 }
 OPTIONAL_COLUMN_KEYS = {
     "sql", "type", "desc", "description", "grp", "business_group",

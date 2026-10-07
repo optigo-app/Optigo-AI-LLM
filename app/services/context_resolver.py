@@ -41,6 +41,9 @@ _FOLLOWUP_CUES: tuple[str, ...] = (
     r"\bthis year\b", r"\blast year\b", r"\btoday\b", r"\byesterday\b",
     r"\bby category\b", r"\bby customer\b", r"\bby month\b", r"\bby metal\b",
     r"\btop 5\b", r"\btop 10\b", r"\btop 3\b",
+    # Hinglish follow-up cues ("aur category wise?", "uska gold?", "aur batao")
+    r"\baur\b", r"\biska\b", r"\buska\b", r"\binka\b", r"\binke\b", r"\buske\b",
+    r"\bbhi\b", r"\bphir\b", r"\bab\b", r"\bwala\b", r"\bwali\b",
 )
 
 # Questions containing these terms are standalone — they name a concrete

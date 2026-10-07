@@ -107,6 +107,41 @@ class ChatCacheReportScopedLookupTests(unittest.TestCase):
         self.assertIsNone(got)
 
 
+    def test_allow_semantic_false_blocks_fuzzy_hit(self):
+        """Weak report scope must not serve a fuzzy cross-question answer —
+        the question may route to a different report than the scope guess."""
+        self._store("total sales", "sales_report")
+
+        async def fake_emb(_q):
+            class _R:
+                embedding = [1.0, 0.0, 0.0]
+            return _R()
+
+        # A different question (no exact key, same date-context) whose
+        # embedding collides with the stored entry — normally a semantic hit.
+        with patch.object(cache_module.llm_gateway, "get_embedding", side_effect=fake_emb):
+            got = asyncio.run(self.cache.lookup(
+                "overall total sales", "DEMO", "u1", "normal",
+                report_key="sales_report", allow_semantic=False,
+            ))
+            self.assertIsNone(got)
+
+            # ...and the same lookup is a hit when semantic matching is on.
+            got = asyncio.run(self.cache.lookup(
+                "overall total sales", "DEMO", "u1", "normal",
+                report_key="sales_report", allow_semantic=True,
+            ))
+            self.assertIsNotNone(got)
+
+    def test_allow_semantic_false_keeps_exact_hit(self):
+        self._store("total sales", "sales_report")
+        got = asyncio.run(self.cache.lookup(
+            "total sales", "DEMO", "u1", "normal",
+            report_key="sales_report", allow_semantic=False,
+        ))
+        self.assertIsNotNone(got)
+
+
 class RegenerateFlagTests(unittest.TestCase):
     """ChatRequest.regenerate must default to False and be accepted."""
 

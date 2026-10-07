@@ -2,7 +2,7 @@ import hashlib
 import re
 import time
 from datetime import date, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import diskcache
 import numpy as np
@@ -34,6 +34,7 @@ class ChatCache:
         threshold: Optional[float] = None,
         report_key: Optional[str] = None,
         date_context: str = "none",
+        allow_semantic: bool = True,
     ) -> Optional[ChatResponse]:
         """Return a cached ChatResponse if a semantically similar question exists.
 
@@ -43,6 +44,11 @@ class ChatCache:
         When `report_key` is provided, the cache is scoped to that report —
         the same question asked on a different report will not return a
         cached entry from another report.
+
+        `allow_semantic=False` restricts the lookup to exact matches — used
+        when the report scope itself is only a weak guess (keyword/session
+        hint), where a fuzzy hit could serve an answer computed for a
+        different report than this question would execute under.
         """
         date_context = _resolve_date_context(question, date_context)
         # Stage 0: Exact-match lookup (no API call needed)
@@ -57,7 +63,30 @@ class ChatCache:
                     # Stale schema (e.g. answer was a plain string) — treat as miss
                     return None
 
-        # Stage 1: Semantic similarity lookup (requires embedding API)
+        if not allow_semantic:
+            return None
+
+        # Stage 1: Semantic similarity lookup (requires embedding API).
+        # Collect same-prefix candidates FIRST — the scan is key-iteration only
+        # and capped, and if the scope is empty we skip the paid embedding call.
+        prefix = _key_prefix(company_code, user_id, response_mode, report_key, date_context)
+        candidates: List[dict] = []
+        scanned = 0
+        for key in self.cache.iterkeys():
+            if not isinstance(key, str) or not key.startswith(prefix):
+                continue
+            scanned += 1
+            if scanned > settings.cache_semantic_scan_limit:
+                break
+            entry = self.cache.get(key)
+            if not entry or not isinstance(entry, dict):
+                continue
+            if entry.get("embedding") and entry.get("response"):
+                candidates.append(entry)
+
+        if not candidates:
+            return None
+
         threshold = threshold or settings.cache_similarity_threshold
         try:
             emb_result = await llm_gateway.get_embedding(question)
@@ -66,24 +95,13 @@ class ChatCache:
             # Embedding failure is non-fatal; treat as cache miss.
             return None
 
-        prefix = _key_prefix(company_code, user_id, response_mode, report_key, date_context)
         best_score = threshold
         best_response: Optional[dict] = None
-
-        for key in self.cache.iterkeys():
-            if not isinstance(key, str) or not key.startswith(prefix):
-                continue
-            entry = self.cache.get(key)
-            if not entry or not isinstance(entry, dict):
-                continue
-            cached_embedding = entry.get("embedding")
-            cached_response = entry.get("response")
-            if not cached_embedding or not cached_response:
-                continue
-            score = _cosine_similarity(embedding, cached_embedding)
+        for entry in candidates:
+            score = _cosine_similarity(embedding, entry["embedding"])
             if score > best_score:
                 best_score = score
-                best_response = cached_response
+                best_response = entry["response"]
 
         if best_response:
             try:

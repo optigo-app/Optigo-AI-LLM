@@ -72,11 +72,52 @@ def _ensure_table() -> None:
             conn.execute("ALTER TABLE session_context ADD COLUMN resolved_question TEXT")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE session_context ADD COLUMN owner TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE session_context ADD COLUMN pending_json TEXT")
+        except sqlite3.OperationalError:
+            pass
     _table_ready = True
 
 
 def new_session_id() -> str:
     return uuid.uuid4().hex[:16]
+
+
+def claim_session(session_id: Optional[str], owner: str) -> bool:
+    """Bind a session to an owner ("company:user"). Returns False when the
+    session is already owned by a different identity — the caller must issue
+    a fresh session_id rather than continuing someone else's conversation.
+    Legacy rows without an owner are claimed by the first caller."""
+    if not session_id or not owner:
+        return True
+    _ensure_table()
+    now = datetime.now(timezone.utc).isoformat()
+    with _get_conn() as conn:
+        # INSERT OR IGNORE can't fail on concurrent first-use of the same
+        # session_id; the conditional UPDATE lets only one caller claim an
+        # unowned legacy row. Final SELECT is the source of truth.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO session_context (session_id, report_key, owner, updated_at)
+            VALUES (?, '', ?, ?)
+            """,
+            (session_id, owner, now),
+        )
+        conn.execute(
+            """
+            UPDATE session_context SET owner = ?
+            WHERE session_id = ? AND (owner IS NULL OR owner = '' OR owner = ?)
+            """,
+            (owner, session_id, owner),
+        )
+        row = conn.execute(
+            "SELECT owner FROM session_context WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        return bool(row and row[0] == owner)
 
 
 def get_messages(session_id: Optional[str], limit: int = 10) -> List[Dict[str, str]]:
@@ -241,3 +282,73 @@ def get_last_intent(session_id: Optional[str]) -> Dict[str, str]:
         "dimension": row[2] or "",
         "resolved_question": row[3] or "",
     }
+
+
+# How long a pending clarify action stays valid. Clicking a stale clarify
+# widget long after it was superseded would otherwise resurrect dead context.
+_PENDING_TTL_SECONDS = 30 * 60
+
+
+def set_pending(session_id: Optional[str], pending: Optional[Dict[str, Any]]) -> None:
+    """Record the clarify state a widget action may resolve.
+
+    `pending` describes what the last clarify asked for — e.g.
+    {"kind": "entity_disambiguation", "question": ..., "entity_value": ...,
+     "options": {"customer": {"label": ..., "inject": ...}}} — so that
+    /chat/action can validate a click payload against the options that were
+    actually offered (the server never trusts the payload alone).
+    """
+    if not session_id:
+        return
+    _ensure_table()
+    record = dict(pending or {})
+    record["created_at"] = datetime.now(timezone.utc).isoformat()
+    now = record["created_at"]
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO session_context (session_id, report_key, pending_json, updated_at)
+            VALUES (?, '', ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                pending_json = excluded.pending_json,
+                updated_at = excluded.updated_at
+            """,
+            (session_id, json.dumps(record, default=str), now),
+        )
+
+
+def get_pending(session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return the pending clarify state, or None when absent/expired."""
+    if not session_id:
+        return None
+    _ensure_table()
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT pending_json FROM session_context WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        pending = json.loads(row[0])
+    except json.JSONDecodeError:
+        return None
+    created = pending.get("created_at")
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(created)).total_seconds()
+    except (ValueError, TypeError):
+        age = _PENDING_TTL_SECONDS + 1
+    if age > _PENDING_TTL_SECONDS:
+        clear_pending(session_id)
+        return None
+    return pending
+
+
+def clear_pending(session_id: Optional[str]) -> None:
+    if not session_id:
+        return
+    _ensure_table()
+    with _get_conn() as conn:
+        conn.execute(
+            "UPDATE session_context SET pending_json = NULL WHERE session_id = ?",
+            (session_id,),
+        )

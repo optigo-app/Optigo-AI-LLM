@@ -18,6 +18,10 @@ class ChatRequest(BaseModel):
     pid: Optional[int] = None
     response_mode: str = "normal"
     regenerate: bool = False  # when True, bypass cache and generate a fresh answer
+    # Internal marker set by /chat/action when it reconstructs a request —
+    # keeps the pending clarify state alive for the re-run while a fresh
+    # user-typed question clears it.
+    from_action: bool = False
 
 
 class ReportInfo(BaseModel):
@@ -59,8 +63,29 @@ class Actions(BaseModel):
     suggestions: List[str] = Field(default_factory=list)
 
 
+class ChatActionRequest(BaseModel):
+    """Structured interaction — a widget/button click resolved server-side.
+
+    The frontend posts the action payload from a block's `action` object here
+    instead of re-sending the label as a natural-language question. The server
+    validates the payload against the pending clarify state recorded in the
+    session, reconstructs the user's intent deterministically, and re-runs the
+    governed pipeline — no re-parsing of display text.
+    """
+    session_id: Optional[str] = None
+    action: Dict[str, Any] = Field(default_factory=dict)  # {"type": ..., "payload": {...}}
+    company_code: str = ""
+    user_id: str = ""
+    response_mode: str = "normal"
+    report_name: Optional[str] = None
+    pid: Optional[int] = None
+    ip_address: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
     status: str = "success"  # success | error | clarify
+    # Blocks wire-format version — lets the frontend detect schema changes.
+    format_version: str = "blocks-v1"
     report: Optional[ReportInfo] = None
     question: Optional[str] = None
     answer: Optional[AnswerData] = None
@@ -134,9 +159,40 @@ class ErrorBlock(BaseModel):
     type: Literal["error"]
     content: str
 
+class BlockAction(BaseModel):
+    """Canonical interactive action attached to a block or option.
+
+    `type` semantics:
+      send_message   — send `payload.message` as the next user question
+      select_option  — resolve a pending disambiguation (payload: option_id, value)
+      set_date_range — resolve a pending date clarify (payload: start_date/end_date or preset)
+      open_report    — client-side navigation to a report page (handler=client)
+      download       — client-side file download (handler=client)
+      feedback       — thumbs up/down on an answer (payload: rating)
+    `handler`: "server" actions POST to /chat/action; "client" actions are
+    handled entirely in the frontend.
+    `display`: short text recorded in conversation history when clicked, so
+    follow-up questions resolve against what the user chose.
+    """
+    type: str
+    label: str = ""
+    handler: Literal["server", "client"] = "server"
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    display: str = ""
+
+
+class ActionableOption(BaseModel):
+    """A clickable option — display label plus the action it fires."""
+    label: str
+    action: BlockAction
+
+
 class SuggestionsBlock(BaseModel):
     type: Literal["suggestions"]
     items: List[str]
+    # Structured parallel to items — new frontends render options (which carry
+    # send_message actions); `items` remains for backward compatibility.
+    options: List[ActionableOption] = Field(default_factory=list)
 
 
 # ── Richer block types for jewelry-industry answers ────────────────────────────
@@ -200,10 +256,14 @@ class ClarifyBlock(BaseModel):
     """A clarification prompt asking the user to be more specific.
 
     Renders as a question + clickable suggestion chips in the frontend.
+    `blocking` mirrors Dialogflow's blocking chips — when true the frontend
+    should steer the user to the offered options rather than free input.
     """
     type: Literal["clarify"]
     content: str
     suggestions: List[str] = Field(default_factory=list)
+    options: List[ActionableOption] = Field(default_factory=list)
+    blocking: bool = False
 
 
 class DateRangeInputBlock(BaseModel):
@@ -215,12 +275,18 @@ class DateRangeInputBlock(BaseModel):
     presets: List[Dict[str, str]] = Field(default_factory=list)
     submit_label: str = "Apply date range"
     submit_message_template: str = "Use date range {start_date} to {end_date}"
+    # Preferred path: POST submit_action to /chat/action with the collected
+    # values in payload — no text template round-trip through the NL parser.
+    submit_action: Optional[BlockAction] = None
 
 
 class ChoiceOption(BaseModel):
     label: str
     value: str
     message: str
+    # Preferred path: structured action resolved by /chat/action.
+    # `message` remains as the legacy fallback for old frontends.
+    action: Optional[BlockAction] = None
 
 
 class ChoiceInputBlock(BaseModel):
@@ -231,6 +297,8 @@ class ChoiceInputBlock(BaseModel):
     value: str
     options: List[ChoiceOption] = Field(..., min_length=1)
     allow_custom: bool = False
+    # True when the frontend should steer the user to these options.
+    blocking: bool = True
 
 
 class SourcesBlock(BaseModel):

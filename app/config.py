@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     cache_similarity_threshold: float = 0.93
     cache_ttl_seconds: int = 3600
     cache_schema_version: str = "v2"
+    # Cap how many same-scope entries the semantic scan evaluates per lookup.
+    # Bounds O(prefix entries) work; raise if cache hit quality degrades.
+    cache_semantic_scan_limit: int = 200
     classifier_similarity_threshold: float = 0.60
     retrieval_top_k: int = 5
     retrieval_rerank: bool = False
@@ -48,6 +51,10 @@ class Settings(BaseSettings):
     auth_required: bool = True
     rate_limit_per_minute: int = 60
     max_question_length: int = 1000
+    # Admin endpoints (feedback stats/down, cache invalidate, detailed health)
+    # require this key in the X-Admin-Key header. When unset (dev), any
+    # authenticated caller is allowed.
+    admin_api_key: str = ""
     # CORS origins — comma-separated allowlist. Default "*" is dev-only.
     # Production should set CORS_ORIGINS="https://app.optigoapps.com,https://admin.optigoapps.com"
     cors_origins: str = "*"

@@ -121,6 +121,21 @@ class TestIntentDetection(unittest.TestCase):
         result = self.classify_question_by_intent("xyz random question", registry)
         self.assertIsNone(result)
 
+    def test_classify_quote_question_routes_to_order_report(self):
+        # 'quote' is distinctive order_report vocabulary; 'jobs' is a generic
+        # entity noun — the specific term must win the intent-order tie.
+        registry = {"wip_report": {}, "order_report": {}}
+        result = self.classify_question_by_intent(
+            "how many jobs has been created from quote", registry)
+        self.assertEqual(result, "order_report")
+
+    def test_classify_generic_jobs_question_stays_wip(self):
+        # No distinctive vocabulary -> generic 'jobs' routes to wip_report.
+        registry = {"wip_report": {}, "order_report": {}}
+        result = self.classify_question_by_intent(
+            "how many jobs in casting", registry)
+        self.assertEqual(result, "wip_report")
+
 
 class TestFormatters(unittest.TestCase):
     """Tests for Indian currency/number formatting from formatters.py."""

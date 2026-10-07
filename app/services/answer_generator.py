@@ -11,7 +11,6 @@ from app.services.formatters import format_count, format_currency, format_number
 from app.services.column_registry import _REGISTRY as _COL_REGISTRY
 from app.services.intent import detect_intent, IntentSpec
 from app.services.output_filter import sanitize_answer, validate_answer
-from app.services.token_budget import check_token_budget, truncate_payload_for_budget
 from app.services import block_builder
 from app.services.column_registry import get_dimension_headers as _get_dimension_headers
 
@@ -482,10 +481,11 @@ def _metric_label(metric: str, intent: str, report_key: str = "") -> str:
         if metric in cat and cat[metric].get("label"):
             return cat[metric]["label"]
 
-    # Layer 2.5: column description from the report's columns config
+    # Layer 2.5: column display label from the report's columns config
+    # (`label` wins over `description` — desc may carry prompt guidance text)
     if report_key:
         col_meta = _COL_REGISTRY.get(report_key, {}).get("columns", {}).get(metric, {})
-        desc = col_meta.get("description", "")
+        desc = col_meta.get("label") or col_meta.get("description", "")
         if desc:
             return desc
 
@@ -1000,7 +1000,10 @@ async def _llm_fallback(
     system = (
         "You're a direct ERP assistant. Answer in 2-3 sentences. "
         "Use **bold** for key numbers. End with a Sources line. "
-        "If data is missing, say so plainly."
+        "If data is missing, say so plainly. "
+        "Reply in the same language the user used — if the question is in "
+        "Hinglish (Roman Hindi mixed with English), answer in Hinglish, "
+        "keeping numbers, entity names and metric terms in English."
     )
     user_prompt = _build_prompt(question, entry, payload, validated_filters, assumptions)
     messages = [{"role": "system", "content": system}]

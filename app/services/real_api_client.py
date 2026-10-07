@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 from app.services.column_registry import _REGISTRY as _COLUMN_REGISTRY
 
+# source_query_file contents, loaded once per file (restart picks up changes)
+_SOURCE_QUERY_CACHE: Dict[str, str] = {}
+
 
 def _get_report_columns(report_key: str) -> Dict[str, Any]:
     """Get the column config for a specific report."""
@@ -296,19 +299,24 @@ def _build_p(
     # Optional generated source query: the legacy SP's row-producing SELECT.
     # When present, the shared SP wraps it as FROM (<SourceQuery>) AS DI and
     # ignores the configured table list.  No DB objects are needed in tenant DBs.
+    # Cached like the report JSONs — a restart picks up file changes.
     source_query = ""
     source_query_file = report_cfg.get("source_query_file")
     if source_query_file:
-        sq_path = (
-            Path(__file__).resolve().parent.parent.parent
-            / "app"
-            / "report_queries"
-            / source_query_file
-        )
-        if sq_path.exists():
-            source_query = sq_path.read_text(encoding="utf-8").strip()
+        if source_query_file in _SOURCE_QUERY_CACHE:
+            source_query = _SOURCE_QUERY_CACHE[source_query_file]
         else:
-            logger.warning("source_query_file not found: %s", sq_path)
+            sq_path = (
+                Path(__file__).resolve().parent.parent.parent
+                / "app"
+                / "report_queries"
+                / source_query_file
+            )
+            if sq_path.exists():
+                source_query = sq_path.read_text(encoding="utf-8").strip()
+            else:
+                logger.warning("source_query_file not found: %s", sq_path)
+            _SOURCE_QUERY_CACHE[source_query_file] = source_query
 
     # ── Resolve report aliases ──
     # Python builds the full SQL expression for both computed and non-computed metrics.
@@ -491,7 +499,7 @@ def _build_p(
                     ai_where_clause = ""
                     break
 
-    table_dimension_filters: Dict[str, str] = {}
+    table_dimension_filters: Dict[str, List[str]] = {}
     p_obj: Dict[str, Any] = {
         "ReportId": report_id,
         "IsMaster": 0,
@@ -573,7 +581,7 @@ def _build_p(
                         allow_subquery=True,
                     )
                     if clause:
-                        table_dimension_filters[table] = clause
+                        table_dimension_filters.setdefault(table, []).append(clause)
                     else:
                         logger.warning("Skipped computed filter %r for table %r — no safe filter expression", report_col_name, table)
             else:
@@ -596,14 +604,24 @@ def _build_p(
         filter_values.append(",".join(sanitized_vals))
 
     if computed_filter_clauses:
-        generated_where = " AND ".join(f"({clause})" for clause in computed_filter_clauses)
-        ai_where_clause = f"({ai_where_clause}) AND {generated_where}" if ai_where_clause else generated_where
+        if len(report_tables) == 1:
+            # The SP caps AIWhereClause at 2000 chars but TableDimensionFilters
+            # get 4000 each — expanded CASE predicates overflow the smaller
+            # budget fast. Single-table reports can carry the same clause
+            # through the per-table channel with identical semantics.
+            table_dimension_filters.setdefault(report_tables[0], []).extend(
+                computed_filter_clauses
+            )
+        else:
+            generated_where = " AND ".join(f"({clause})" for clause in computed_filter_clauses)
+            ai_where_clause = f"({ai_where_clause}) AND {generated_where}" if ai_where_clause else generated_where
 
     p_obj["AIWhereClause"] = _xml_escape(ai_where_clause)
     p_obj["FilterHeader"] = "#".join(filter_headers)
     p_obj["FilterValue"] = _xml_escape("#".join(filter_values))
     p_obj["TableDimensionFilters"] = {
-        table: _xml_escape(clause) for table, clause in table_dimension_filters.items()
+        table: _xml_escape(" AND ".join(f"({clause})" for clause in clauses))
+        for table, clauses in table_dimension_filters.items()
     }
 
     return json.dumps(p_obj, separators=(",", ":"))
@@ -647,7 +665,8 @@ async def call_real_report_api(
     # If any layer fails, the WHERE clause is rejected (fail-closed).
     from app.services.sql_guard import validate_where_clause
     safe_where, guard_reason = validate_where_clause(ai_where_clause, report_key)
-    if ai_where_clause and not safe_where:
+    ai_where_dropped = bool(ai_where_clause and not safe_where)
+    if ai_where_dropped:
         logger.warning(
             "SQL Guard REJECTED ai_where_clause for report=%s reason=%s | raw=%s",
             report_key, guard_reason, ai_where_clause[:200],
@@ -783,6 +802,11 @@ async def call_real_report_api(
         success=stat_code is None,
         error="" if stat_code is None else f"stat_code={stat_code}",
     )
+
+    if ai_where_dropped:
+        # Surface the guard rejection to the caller so the answer can disclose
+        # that the query ran unfiltered (silent drop = confidently wrong).
+        parsed["ai_where_dropped"] = True
 
     return parsed
 

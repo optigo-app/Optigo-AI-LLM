@@ -1,5 +1,5 @@
 {
-  "description": "Order report — job orders with quotation details, weights, amounts, and order status",
+  "description": "Order report — job orders created from quotations (quotation jobs) with quotation details, weights, amounts, and order status. Use for 'jobs/orders created from quote' questions.",
   "sp": 245,
   "report_id": 22,
   "default_metric": "Amount",
@@ -13,6 +13,17 @@
     "JobManagement_JobMaster_closed": "IsQuotationJobBillArchived=3"
   },
   "base_filter": "ISNULL(IsCustomizeJob,0)=0 AND ISNULL(IsBulkjob,0)=0 AND ISNULL(jobflowfrom,'')<>'Retail' AND ISNULL(SKUNO,'')<>'' AND ISNULL(isdelete,0)=0 AND jobflowfrom NOT IN ('advfgpurchaseneworder','ReceiveToRepair')",
+    "source_query_file": "order_report.sql",
+  "masters": [
+    "orders",
+    "orderType",
+    "SoldPending",
+    "customer_type",
+    "salesrep_name",
+    "jobflowfrom",
+    "SalesrepCode",
+    "salesrep_customercode"
+  ],
   "columns": {
     "jobdate": {
       "sql": "jobdate",
@@ -368,6 +379,73 @@
         ]
       }
     },
+    "has_quotation": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.QuotationNo,'') <> '' THEN 'Yes' ELSE 'No' END",
+      "desc": "Whether the order was created from a quotation",
+      "grp": "quotation",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "created from quote",
+          "created from quotation",
+          "from quote",
+          "from quotation",
+          "quotation job",
+          "quoted job"
+        ]
+      }
+    },
+    "salesrep_customercode": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT ISNULL(U.customercode,'') FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.systemloginmaster_salesrepid)",
+      "desc": "Sales rep user code",
+      "grp": "customer",
+      "not_in_where": true
+    },
+    "salesrep_name": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT LTRIM(RTRIM(ISNULL(U.firstname,'') + ' ' + ISNULL(U.lastname,''))) FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.systemloginmaster_salesrepid)",
+      "desc": "Sales rep name",
+      "grp": "customer",
+      "not_in_where": true
+    },
+    "customer_type": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT ISNULL(U.MasterManagement_BusinessClassname,'') FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.systemloginmaster_customerid)",
+      "table_dimension_exprs": {
+        "JobManagement_JobMaster": "(SELECT ISNULL(U.MasterManagement_BusinessClassname,'') FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.systemloginmaster_customerid)",
+        "JobManagement_JobMaster_closed": "(SELECT ISNULL(U.MasterManagement_BusinessClassname,'') FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.systemloginmaster_customerid)"
+      },
+      "desc": "Customer Type",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "customer type",
+          "business class",
+          "customer segment",
+          "segment"
+        ]
+      }
+    },
+    "IsMFGBulkFlow": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT ISNULL([value],0) FROM {DBNAME}WebConfig WHERE [Key]='IsMFGBulkFlow')",
+      "desc": "MFG bulk flow flag",
+      "grp": "order",
+      "not_in_where": true
+    },
     "month": {
       "sql": "",
       "type": "string",
@@ -388,7 +466,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(GrossCTWWithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(GrossCTWWithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QGwt,0)",
       "desc": "Gross Wt",
       "grp": "weight",
       "unit": "gms",
@@ -403,7 +481,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(Netwt,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(Netwt,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QNwt,0)",
       "desc": "Net Wt",
       "grp": "weight",
       "unit": "gms",
@@ -417,7 +495,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(CONVERT(DECIMAL(38,3),CASE WHEN ISNULL(mp_both.price_ratio,0)>0 AND ISNULL(mp_to.price_ratio,0)>0 THEN ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*mp_both.price_ratio/mp_to.price_ratio ELSE ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*ISNULL(mp_concat.price_ratio,0)/100 END)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo a LEFT JOIN {DBNAME}Mastermanagement_metaltype b ON a.MasterManagement_goldtypeid=b.autocode LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_to ON b.metaltypename=mp_to.metaltypename AND mp_to.IsBaseMetal=1 LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_both ON b.metaltypename=mp_both.metaltypename AND b.metalPurity=mp_both.metalPurity LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_concat ON CONCAT(mp_concat.metaltypename,' ',mp_concat.metalPurity)=b.metalPurity WHERE a.job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(CONVERT(DECIMAL(38,3),CASE WHEN ISNULL(mp_both.price_ratio,0)>0 AND ISNULL(mp_to.price_ratio,0)>0 THEN ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*mp_both.price_ratio/mp_to.price_ratio ELSE ISNULL(a.Netwt,0)*ISNULL(a.Quantity,0)*ISNULL(mp_concat.price_ratio,0)/100 END)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive a LEFT JOIN {DBNAME}Mastermanagement_metaltype b ON a.MasterManagement_goldtypeid=b.autocode LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_to ON b.metaltypename=mp_to.metaltypename AND mp_to.IsBaseMetal=1 LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_both ON b.metaltypename=mp_both.metaltypename AND b.metalPurity=mp_both.metalPurity LEFT JOIN {DBNAME}Mastermanagement_MetalPurity mp_concat ON CONCAT(mp_concat.metaltypename,' ',mp_concat.metalPurity)=b.metalPurity WHERE a.job_JobNo = DI.JobNo AND a.IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QPwt,0)",
       "desc": "Pure Wt",
       "grp": "weight",
       "unit": "gms",
@@ -432,7 +510,7 @@
       "sql": "",
       "type": "int",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(diamond_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(diamond_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QDpcs,0)",
       "desc": "Dia Pcs",
       "grp": "diamond",
       "unit": "pcs",
@@ -447,7 +525,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(DiamondCTWwithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(DiamondCTWwithLoss,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QDwt,0)",
       "desc": "Dia Wt",
       "grp": "diamond",
       "unit": "ctw",
@@ -462,7 +540,7 @@
       "sql": "",
       "type": "int",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(colorstone_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(colorstone_totalpieces,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QCSpcs,0)",
       "desc": "CS Pcs",
       "grp": "colour_stone",
       "unit": "pcs",
@@ -477,7 +555,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(ActualColorStoneWeight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(ActualColorStoneWeight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QCSwt,0)",
       "desc": "CS Wt",
       "grp": "colour_stone",
       "unit": "ctw",
@@ -492,7 +570,7 @@
       "sql": "",
       "type": "int",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(totalmiscpcs,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(totalmiscpcs,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QMiscpcs,0)",
       "desc": "Misc Pcs",
       "grp": "misc",
       "unit": "pcs",
@@ -506,7 +584,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(totalmiscweight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(totalmiscweight,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QMiscwt,0)",
       "desc": "Misc Wt",
       "grp": "misc",
       "unit": "gms",
@@ -520,7 +598,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0))*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0))*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QMetalAmt,0)",
       "desc": "Metal Amt",
       "grp": "amount",
       "unit": "currency",
@@ -535,7 +613,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(TotalDiaLGCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalDiaLGCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QDiaAmt,0)",
       "desc": "Dia Amt",
       "grp": "amount",
       "unit": "currency",
@@ -550,7 +628,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(TotalColorStoneCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalColorStoneCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QCsAmt,0)",
       "desc": "CS Amt",
       "grp": "amount",
       "unit": "currency",
@@ -565,7 +643,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(TotalMiscCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(TotalMiscCost,0)*ISNULL(Quantity,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QMiscAmt,0)",
       "desc": "Misc Amt",
       "grp": "amount",
       "unit": "currency",
@@ -579,7 +657,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)-((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0)+ISNULL(TotalDiaLGCost,0)+ISNULL(TotalColorStoneCost,0)+ISNULL(TotalMiscCost,0))*ISNULL(Quantity,0))),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)-((ISNULL(TotalMetalCost,0)+ISNULL(MM_TotalMetalCost,0)+ISNULL(TotalFindingCost,0)+ISNULL(TotalDiaLGCost,0)+ISNULL(TotalColorStoneCost,0)+ISNULL(TotalMiscCost,0))*ISNULL(Quantity,0))),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QLOAmt,0)",
       "desc": "Labour Amt",
       "grp": "amount",
       "unit": "currency",
@@ -595,7 +673,7 @@
       "sql": "",
       "type": "decimal",
       "calc": true,
-      "me": "(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE job_JobNo = DI.JobNo)+(SELECT ISNULL(SUM(ISNULL(FinalAmount,0)),0) FROM {DBNAME}Quotationmanagement_dcbdesignInfo_Archive WHERE job_JobNo = DI.JobNo AND IsQuotationJobBillArchived=3)",
+      "me": "ISNULL(DI.QFinalAmt,0)",
       "desc": "Amount",
       "grp": "amount",
       "unit": "currency",
@@ -686,7 +764,16 @@
     "quote": "QuotationNo",
     "sales rep": "SalesrepCode",
     "salesperson": "SalesrepCode",
+    "sales rep name": "salesrep_name",
+    "rep name": "salesrep_name",
+    "customer type": "customer_type",
+    "business class": "customer_type",
+    "customer segment": "customer_type",
     "order type": "orderType",
+    "ordertype": "orderType",
+    "job type": "orders",
+    "jobtype": "orders",
+    "job classification": "orders",
     "status": "SoldPending",
     "order status": "SoldPending",
     "job flow": "jobflowfrom",
@@ -724,6 +811,13 @@
     "order_status": "SoldPending",
     "job_flow": "jobflowfrom",
     "flow_from": "jobflowfrom",
+    "customer_type": "customer_type",
+    "business_class": "customer_type",
+    "has_quotation": "has_quotation",
+    "from_quotation": "has_quotation",
+    "from_quote": "has_quotation",
+    "created_from_quote": "has_quotation",
+    "quotation_job": "has_quotation",
     "design_set": "designsetnolist",
     "set_no": "designsetnolist",
     "created_by": "loginUserCode",
@@ -927,7 +1021,9 @@
     "total_count": {
       "type": "count",
       "label": "Order count",
-      "companions": ["Amount"],
+      "companions": [
+        "Amount"
+      ],
       "aliases": [
         "how many orders",
         "order count",
@@ -1267,6 +1363,22 @@
     "SoldPending": {
       "sold": "sold",
       "pending": "pending"
+    },
+    "has_quotation": {
+      "1": "Yes",
+      "0": "No",
+      "true": "Yes",
+      "false": "No",
+      "yes": "Yes",
+      "created from quote": "Yes",
+      "created from quotation": "Yes",
+      "from quote": "Yes",
+      "from quotation": "Yes",
+      "quotation": "Yes",
+      "quoted": "Yes",
+      "no": "No",
+      "direct": "No",
+      "not from quote": "No"
     }
   },
   "report_keywords": [

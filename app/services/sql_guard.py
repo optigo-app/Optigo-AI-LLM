@@ -454,7 +454,8 @@ def validate_where_clause(where_clause: str, report_key: str) -> Tuple[str, str]
     # Remove leading "WHERE" or "AND" or "OR" if present
     where_clause = re.sub(r'^(WHERE|AND|OR)\s+', '', where_clause, flags=re.IGNORECASE)
 
-    logger.info("SQL Guard: validating WHERE clause for report=%s: %s", report_key, where_clause[:200])
+    logger.info("SQL Guard: validating WHERE clause for report=%s len=%d: %s",
+                report_key, len(where_clause), where_clause)
 
     # ── Layer 1: String blocklist ──
     safe, reason = _check_string_blocklist(where_clause)

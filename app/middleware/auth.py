@@ -59,11 +59,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.company_code = user_data.get("companycode", "")
             request.state.user_id = user_data.get("userid", "")
             request.state.token = user_data.get("token", "")
+            # Execution-scope fields the ERP may provide on login — when present
+            # these (not request-body fields) are authoritative.
+            request.state.appuserid = (
+                user_data.get("appuserid")
+                or user_data.get("email")
+                or user_data.get("userid")
+                or ""
+            )
+            request.state.yearcode = user_data.get("yearcode", "")
         else:
             request.state.user = None
             request.state.company_code = None
             request.state.user_id = None
             request.state.token = None
+            request.state.appuserid = None
+            request.state.yearcode = None
 
         # Require a valid cookie for authentication
         # In dev mode (AUTH_REQUIRED=false), allow requests without a cookie

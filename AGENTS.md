@@ -2,11 +2,11 @@
 
 ## Environment
 - Python 3.13 with venv at `.venv/`. Use `.\.venv\Scripts\python.exe` to run scripts/tests.
-- `pytest` is not installed; use `python -m unittest <module>` for tests.
+- `pytest` is installed (9.x) and required: many test files use plain classes/fixtures that `unittest discover` silently skips. Always run `python -m pytest tests` for the full suite.
 - Config is env-driven via `pydantic_settings` (`.env` file).
 
 ## Key Commands
-- Run unit tests: `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`
+- Run unit tests: `.\.venv\Scripts\python.exe -m pytest tests -q` (full suite incl. pytest-style files)
 - Validate report configs: `.\.venv\Scripts\python.exe scripts\validate_report_configs.py`
 - Syntax check Python: `python -c "import ast; ast.parse(open('path').read())"`
 
@@ -67,6 +67,30 @@ Shared cross-report rules are merged from `app/report_columns/_shared/jewelry_kn
 - Default metric: `JobCost`, default dimension: `department`.
 - Intent patterns, fallback, keywords, and canonical values now live in `report_columns/wip_report.json`.
 
+## Order Report (order_report)
+- `sp`: 245 (shared LLM-chat SP), grouped grain — the real `DynamicOrderReportbeta` counts join-rows (job x quotation line) inside groups that pass a `HAVING` (`SUM(Job_Quantity)>0` AND at least one non-`advfgpurchaseneworder`/`advfgpurchasereorder` row, grouped by 22 keys).
+- `source_query_file`: `app/report_queries/order_report.sql` reproduces that pipeline as a derived table — JobData union (`JobManagement_JobMaster` + `_closed` with `IsQuotationJobBillArchived=3`), LEFT JOIN `QuotationAggregates`, and the group-HAVING via `SUM(...) OVER (PARTITION BY <same keys>)` so row grain is preserved for filters/dimensions.
+- The 15 quotation metrics (`GrossWt`…`Amount`) use `me: ISNULL(DI.Q*,0)` pointing at per-line columns exposed by the source query — NOT correlated `job_JobNo` subqueries (those double-count at join-row grain).
+- `QuotationJob`/`total_count` = join-row count (matches the real report's "Quote Jobs" total). `ETAJobs`/`RemJobs` split by `JobManagement_ProgressStatusMasterid NOT IN / IN (1,12)`.
+- `tables`/`base_filter`/`table_filters` stay configured as a graceful fallback — if the source-query file is missing, the SP falls back to flat table mode (base_filter is idempotent over the DI columns; `table_filters` is ignored in SourceQuery mode).
+- SourceQuery rules: must start with SELECT, no `;`/`--`/`/*`/`*/`, no CTE at top level (a derived table cannot contain `WITH` — use nested subqueries), `[dbo].` prefixes are auto-rewritten to the tenant DB. See `app/report_queries/sales_report.sql` for the convention.
+
+## Chat Pipeline (post-refactor)
+- `app/main.py` is routes/middleware only (~550 lines). All orchestration lives in `app/services/chat_service.py`.
+- `chat_service.run_chat(body, request, registry, cache) -> ChatResponse` is the single pipeline used by BOTH `/chat` and `/chat/stream`. `stream_chat()`/`stream_chat_events()` translate the same ChatResponse into SSE events — no divergent logic.
+- SSE contract: `{"session_id"}` first → `{"error"}|{"status":"clarify",...,"done":true}|metadata + {"chunk"}* + {"done":true}`.
+- `prepare_chat()` (identity + session binding + response mode) is shared; `run_chat` stamps `request.state.session_id`.
+- Do NOT add bookkeeping after a `done` yield in SSE paths — clients disconnect on `done` and post-done code silently never runs.
+
+## Widget Actions (`/chat/action`)
+- Interactive blocks carry a canonical `action` object `{type, handler, payload, display}` — clicks POST to `/chat/action` (+`/v1/`, +`/chat/action/stream`) instead of re-sending the label as text. `format_version: "blocks-v1"` on ChatResponse.
+- `chat_service.run_action` validates the payload against **server-side pending state** (`conversation_store.set_pending/get_pending`, `session_context.pending_json`, 30-min TTL) recorded when the clarify was emitted — a click can only pick among offered options, never inject fields.
+- Action types: `send_message` (verbatim question, no pending needed), `select_option` (entity disambiguation — deterministic rewrite "VIDSY sales" → "design VIDSY sales" via `ENTITY_OPTION_INJECT`), `set_date_range` (explicit `start_date`/`end_date` or `preset` → injected as `body.filters`, which `run_chat` merges into `validated_filters` via `_validate_inbound_filters` — dates only).
+- `ChatRequest.from_action=True` keeps pending alive during the re-run; a fresh user-typed question clears it. `display` text is written to history so follow-ups resolve against the choice.
+- Entity options come from `block_builder.ENTITY_OPTION_INJECT` (design, sku, customer, invoice, salesperson, brand, category, branch — ordered by jewellery-ERP likelihood) + `ENTITY_OPTION_LABELS`.
+- `blocking: true` on clarify/choice blocks means the frontend should steer to the offered options (Dialogflow-style blocking chips).
+- `static/chat_demo.html` is the reference block renderer + action client (served at `/static/`, public path).
+
 ## Pipeline Tracing (observability)
 - `app/services/pipeline_trace.py` — `StageTracer` records per-stage latency/outcome for each chat request: `context`, `semantic_parse`, `execute`, `answer`.
 - Emitted as `{"event": "pipeline_trace", ...}` JSONL entries in `logs/audit.log`; also feeds `stage_latencies` + `failure_stage` in the existing `request_trace` entries.
@@ -76,5 +100,5 @@ Shared cross-report rules are merged from `app/report_columns/_shared/jewelry_kn
 ## Test Notes
 - `tests/test_unit_core.py` tests use `sales_summary` as report_key; `sales_report` is the column registry key. An alias `sales_summary -> sales_report` is added in `column_registry.py`, `real_api_client.py`, and `intent.py` so both keys resolve to the same config.
 - `sales_summary` is the legacy intent-config name; `sales_report` is the column-registry / registry name.
-- The full suite currently has 208 tests; run it with `python -m unittest discover -s tests -v`.
+- The full suite has ~400 tests; run it with `python -m pytest tests -q`.
 - `scripts/validate_report_configs.py` checks required keys, type correctness, intent metric/dimension references, canonical-value references, and duplicate aliases.

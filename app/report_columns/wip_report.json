@@ -2,12 +2,37 @@
   "description": "WIP (work-in-progress) report — jobs in production, their status, costing, weights, and engaged materials",
   "sp": 245,
   "report_id": 21,
+  "date_column": "jobpromisedate",
   "default_metric": "JobCost",
   "default_dimension": "department",
   "tables": [
     "ProductionManagement_SerialNoBook"
   ],
   "base_filter": "ISNULL(MasterManagement_productionstatusid,0) NOT IN (28) AND ISNULL(iStore_IsJobClosed,0) = 0 AND ISNULL(ismerged,0) = 0 AND ISNULL(isAllSplitedJobsNotMerged,0) <> 1 AND ISNULL(IsSplitProcess_NotCompleted,0) = 0 AND ISNULL(isETARejected,0) = 0 AND ISNULL(Mastermanagement_MFG_JobLastLocationid,0) IN (1,2,3,4,5) AND (ISNULL(isReverseEngage,0) <> 1 OR (ISNULL(isReverseEngage,0) = 1 AND ISNULL(REcnt,0) = 0 AND ISNULL(ReverseEngage_parent_serialjobno,'') <> ''))",
+  "masters": [
+    "department",
+    "jobtype",
+    "OrderTypeName",
+    "priority",
+    "JobLocation",
+    "maketypename",
+    "metal_type_name",
+    "MetalColor",
+    "brandname",
+    "workername",
+    "category",
+    "SubCategory",
+    "collectionname",
+    "jadauname",
+    "Current_Departmentname",
+    "LastProcessedBy",
+    "withpip",
+    "engage_productionstatusname",
+    "IsCompanyJob",
+    "has_quotation",
+    "customer_salesrep_customercode",
+    "salesrep_master_customercode"
+  ],
   "columns": {
     "jobentrydate": {
       "sql": "jobentrydate",
@@ -181,6 +206,7 @@
       "type": "string",
       "calc": true,
       "de": "CASE WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 1 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 33) THEN 'Bagging Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isEngage,0) = 2 AND ISNULL(DI.isWaxEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 34) THEN 'Bagging Completed' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 1 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 40) THEN 'Wax Engage Running' WHEN (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) = 0) OR (ISNULL(DI.MasterManagement_productionstatusid,0) = 1 AND ISNULL(DI.isWaxEngage,0) = 2 AND ISNULL(DI.isEngage,0) <> 0 AND ISNULL(DI.Engage_Lastproductionstatusid,0) = 41) THEN 'Wax Engage Completed' WHEN ISNULL(DI.MasterManagement_productionstatusid,0) = 28 AND ISNULL(DI.isoutsource,0) = 1 THEN 'Out Source' ELSE ISNULL(DI.productionstatusname,'') END",
+      "label": "Department",
       "desc": "Production department/status (values like Casting-Issue, setting-Issue, Pre Polish-Issue, Assembling-Receive, Pending Request). Use THIS column for 'jobs in <process>/department' questions — always with LIKE '%x%' because values carry -Issue/-Receive/-Pending suffixes.",
       "grp": "manufacturing",
       "filter": {
@@ -189,13 +215,34 @@
           "department",
           "status",
           "production status",
+          "progress",
           "stage"
+        ]
+      }
+    },
+    "priority": {
+      "sql": "jobpriority",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT ISNULL(PM.name,'') FROM {DBNAME}MasterManagement_Priority PM WHERE PM.id = DI.jobpriority)",
+      "table_dimension_exprs": {
+        "ProductionManagement_SerialNoBook": "(SELECT ISNULL(PM.name,'') FROM {DBNAME}MasterManagement_Priority PM WHERE PM.id = DI.jobpriority)"
+      },
+      "desc": "Job priority name (master lookup on jobpriority id)",
+      "grp": "order",
+      "not_in_where": true,
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "priority",
+          "job priority"
         ]
       }
     },
     "Current_Departmentname": {
       "sql": "Current_Departmentname",
       "type": "string",
+      "label": "Current Department",
       "desc": "Physical department name only (setting, Pre Polish, Assembling, Filing). Do NOT use for 'jobs in <process>' — prefer the computed department column.",
       "grp": "manufacturing",
       "filter": {
@@ -284,10 +331,12 @@
     "OrderTypeName": {
       "sql": "OrderTypeName",
       "type": "string",
-      "desc": "Order type",
+      "calc": true,
+      "de": "ISNULL(DI.OrderTypeName,'')",
+      "desc": "Order type (Regular / Corporate / RND)",
       "grp": "order",
       "filter": {
-        "match": "exact",
+        "match": "like",
         "aliases": [
           "order type",
           "ordertype"
@@ -337,6 +386,451 @@
           "without pip"
         ]
       }
+    },
+    "Srorderno": {
+      "sql": "Srorderno",
+      "type": "string",
+      "desc": "Sales order number (Sr. order no on the job)",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "sr order no",
+          "srorderno",
+          "order no",
+          "sale order no"
+        ]
+      }
+    },
+    "Srversionname": {
+      "sql": "Srversionname",
+      "type": "string",
+      "desc": "Sales order version name",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "order version",
+          "version"
+        ]
+      }
+    },
+    "plasticwt": {
+      "sql": "plasticwt",
+      "type": "decimal",
+      "desc": "Plastic weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "plastic weight",
+        "plastic wt"
+      ]
+    },
+    "Diamond_actualusedgm": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(ISNULL(DI.Diamond_actualused,0) + ISNULL(DI.QuickRepairing_Diamondwt,0)) / 5.00",
+      "desc": "Diamond actually used in grams (ctw/5 incl. quick-repair weight)",
+      "grp": "diamond",
+      "unit": "gms",
+      "aliases": [
+        "diamond used grams",
+        "diamond gm"
+      ]
+    },
+    "ColorStone_actualusedgm": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(DI.ColorStone_actualused,0) + ISNULL(DI.QuickRepairing_Cswt,0) / 5.00",
+      "desc": "Colourstone actually used in grams",
+      "grp": "colour_stone",
+      "unit": "gms",
+      "aliases": [
+        "colourstone used grams",
+        "cs gm"
+      ]
+    },
+    "Diamond_actualusedgm_1": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(ISNULL(DI.Diamond_actualused,0) + ISNULL(DI.QuickRepairing_Diamondwt,0)) - ISNULL(DI.solitairewt,0)",
+      "desc": "Diamond used excl. solitaire weight",
+      "grp": "diamond",
+      "unit": "gms"
+    },
+    "ColorStone_actualusedgm_1": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "(ISNULL(DI.ColorStone_actualused,0) + ISNULL(DI.QuickRepairing_Cswt,0)) - ISNULL(DI.gemstonewt,0)",
+      "desc": "Colourstone used excl. gemstone weight",
+      "grp": "colour_stone",
+      "unit": "gms"
+    },
+    "EngagedFinding_pure": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL({DBNAME}dbo.fn_get_source_remaning_metalctw(ISNULL(DI.metal_purity_name,''), ISNULL(DI.EngagedFinding,0), ISNULL(DI.metal_type_name,''), 'pure'), 0)",
+      "desc": "Engaged finding converted to pure weight (grams)",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "engaged finding pure",
+        "pure engaged finding"
+      ]
+    },
+    "solitairepcs": {
+      "sql": "solitairepcs",
+      "type": "int",
+      "desc": "Solitaire pieces",
+      "grp": "diamond",
+      "unit": "pcs",
+      "aliases": [
+        "solitaire pieces",
+        "solitaire pcs"
+      ]
+    },
+    "solitairewt": {
+      "sql": "solitairewt",
+      "type": "decimal",
+      "desc": "Solitaire weight (carat)",
+      "grp": "diamond",
+      "unit": "ctw",
+      "aliases": [
+        "solitaire weight",
+        "solitaire wt"
+      ]
+    },
+    "gemstonepcs": {
+      "sql": "gemstonepcs",
+      "type": "int",
+      "desc": "Gemstone pieces",
+      "grp": "colour_stone",
+      "unit": "pcs",
+      "aliases": [
+        "gemstone pieces",
+        "gemstone pcs"
+      ]
+    },
+    "gemstonewt": {
+      "sql": "gemstonewt",
+      "type": "decimal",
+      "desc": "Gemstone weight (carat)",
+      "grp": "colour_stone",
+      "unit": "ctw",
+      "aliases": [
+        "gemstone weight",
+        "gemstone wt"
+      ]
+    },
+    "promise_age": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "DATEDIFF(day, DI.jobentrydate, CONVERT(nvarchar(11), DI.jobpromisedate, 113))",
+      "desc": "Days from job entry to promised date (negative = promise already passed at entry)",
+      "grp": "manufacturing",
+      "aliases": [
+        "promise age",
+        "days to promise",
+        "promise days"
+      ]
+    },
+    "current_age": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "DATEDIFF(day, DI.jobentrydate, ISNULL(dbo.UTC_CSERVERLOCAL(GETDATE()), GETDATE()))",
+      "desc": "Job age in days since entry",
+      "grp": "manufacturing",
+      "aliases": [
+        "job age",
+        "current age",
+        "days in progress"
+      ]
+    },
+    "collectionname": {
+      "sql": "collectionname",
+      "type": "string",
+      "desc": "Collection name",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "collection",
+          "collection name"
+        ]
+      }
+    },
+    "SubCategory": {
+      "sql": "SubCategory",
+      "type": "string",
+      "desc": "Sub-category",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "subcategory",
+          "sub category",
+          "sub-category"
+        ]
+      }
+    },
+    "diaColor": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT STRING_AGG(MasterManagement_diamond_colorname,' ,') FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE MasterManagement_DiamondStoneTypeid = 1 AND QuotationNo = DI.iStore_QuotationNo)",
+      "desc": "Diamond colour(s) from the job quotation",
+      "grp": "diamond",
+      "not_in_where": true
+    },
+    "diaQuality": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT STRING_AGG(Quality,' ,') FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE MasterManagement_DiamondStoneTypeid = 1 AND QuotationNo = DI.iStore_QuotationNo)",
+      "desc": "Diamond quality(ies) from the job quotation",
+      "grp": "diamond",
+      "not_in_where": true
+    },
+    "engage_productionstatusname": {
+      "sql": "engage_productionstatusname",
+      "type": "string",
+      "desc": "Engaged production stage name (process the job is engaged in)",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "engaged stage",
+          "engage status",
+          "engaged in"
+        ]
+      }
+    },
+    "IsCompanyJob": {
+      "sql": "IsCompanyJob",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.IsCompanyJob,0) = 1 THEN 'Sales Order' ELSE '' END",
+      "desc": "Sales-order flag ('Sales Order' when the job came from a company/sales order)",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "company job",
+          "sales order job"
+        ]
+      }
+    },
+    "QuotationNo": {
+      "sql": "iStore_QuotationNo",
+      "type": "string",
+      "desc": "Quotation number the job was created from (empty = direct job)",
+      "grp": "order",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "quotation no",
+          "quotation number",
+          "quote no",
+          "quote number"
+        ]
+      }
+    },
+    "has_quotation": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "CASE WHEN ISNULL(DI.iStore_QuotationNo,'') <> '' THEN 'Yes' ELSE 'No' END",
+      "desc": "Whether the job was created from a quotation",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "created from quote",
+          "created from quotation",
+          "from quote",
+          "from quotation",
+          "quotation job",
+          "quoted job"
+        ]
+      }
+    },
+    "Batch_No": {
+      "sql": "Batch_No",
+      "type": "string",
+      "desc": "Batch number",
+      "grp": "manufacturing",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "batch",
+          "batch no",
+          "batch number"
+        ]
+      }
+    },
+    "CPO": {
+      "sql": "po",
+      "type": "string",
+      "desc": "Customer PO number",
+      "grp": "order",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "po",
+          "customer po",
+          "cpo"
+        ]
+      }
+    },
+    "batchnumber": {
+      "sql": "batchnumber",
+      "type": "string",
+      "desc": "Batch number (secondary)",
+      "grp": "manufacturing"
+    },
+    "mfgdesign": {
+      "sql": "mfgdesign",
+      "type": "string",
+      "desc": "Manufacturing design reference",
+      "grp": "product",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "mfg design",
+          "manufacturing design"
+        ]
+      }
+    },
+    "Total_DiamondPcs_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totaldiamondpcs FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=1 THEN ISNULL([pieces],0)+ISNULL(pieces_SizeWise,0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required diamond pieces from design/quotation (pcs x job qty)",
+      "grp": "diamond",
+      "unit": "pcs",
+      "aliases": [
+        "required diamond pcs",
+        "quotation diamond pcs",
+        "required diamond pieces"
+      ]
+    },
+    "Total_CsPcs_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totalcolorstonepcs FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=2 THEN ISNULL([pieces],0)+ISNULL(pieces_SizeWise,0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required colourstone pieces from design/quotation",
+      "grp": "colour_stone",
+      "unit": "pcs",
+      "aliases": [
+        "required cs pcs",
+        "quotation cs pcs",
+        "required colourstone pieces"
+      ]
+    },
+    "Total_miscPcs_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totalmiscpcs FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=3 THEN ISNULL([pieces],0)+ISNULL(pieces_SizeWise,0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required misc-stone pieces from design/quotation",
+      "grp": "misc",
+      "unit": "pcs",
+      "aliases": [
+        "required misc pcs",
+        "quotation misc pcs"
+      ]
+    },
+    "Total_DiamondCtw_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totaldiamondweight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=1 THEN ISNULL([GrossDiamondWeight],0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required diamond weight (ctw, with loss) from design/quotation",
+      "grp": "diamond",
+      "unit": "ctw",
+      "aliases": [
+        "required diamond ctw",
+        "quotation diamond weight",
+        "required diamond weight"
+      ]
+    },
+    "Total_CSCtw_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totalcolorstoneweight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=2 THEN ISNULL([Weight],0)+ISNULL(weight_SizeWise,0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required colourstone weight (ctw, with loss) from design/quotation",
+      "grp": "colour_stone",
+      "unit": "ctw",
+      "aliases": [
+        "required cs ctw",
+        "quotation cs weight",
+        "required colourstone weight"
+      ]
+    },
+    "Total_miscCtw_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL(CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.totalmiscweight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), ISNULL((SELECT SUM(CASE WHEN ISNULL(MasterManagement_DiamondStoneTypeid,0)=3 THEN ISNULL([Weight],0)+ISNULL(weight_SizeWise,0) ELSE 0 END) FROM {DBNAME}Quotationmanagement_designdiamonddetail WHERE QuotationNo = DI.iStore_QuotationNo),0))) * IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), 1, ISNULL(DI.IsSplits_Quotation_Quantity,0)), 0)",
+      "desc": "Required misc-stone weight (ctw, with loss) from design/quotation",
+      "grp": "misc",
+      "unit": "ctw",
+      "aliases": [
+        "required misc ctw",
+        "quotation misc weight"
+      ]
+    },
+    "GrossWeight_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.ActualGrossweight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), (ISNULL((SELECT SUM(GrossWeight) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE QuotationNo = DI.iStore_QuotationNo),0) * ISNULL(DI.IsSplits_Quotation_Quantity,0))))",
+      "desc": "Required gross weight from design/quotation",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "required gross weight",
+        "quotation gross weight",
+        "quotation gross wt"
+      ]
+    },
+    "NetWt_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.MetalWeight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), (ISNULL((SELECT SUM(netwt) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE QuotationNo = DI.iStore_QuotationNo),0) * ISNULL(DI.IsSplits_Quotation_Quantity,0))))",
+      "desc": "Required net weight from design/quotation",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "required net weight",
+        "quotation net weight",
+        "quotation net wt"
+      ]
+    },
+    "Total_PurWt_quot": {
+      "sql": "",
+      "type": "decimal",
+      "calc": true,
+      "me": "ISNULL({DBNAME}dbo.fn_get_source_remaning_metalctw(ISNULL(DI.metal_purity_name,''), CONVERT(DECIMAL(38,3), IIF((ISNULL(DI.iStore_QuotationNo,'')='' AND ISNULL(DI.IsQuickRepairing,0)=1 AND ISNULL(DI.IsMFGJob,0)=0), ISNULL((SELECT TOP 1 D.MetalWeight FROM {DBNAME}designmanagement_design D WHERE D.designno = DI.Designcode),0), (ISNULL((SELECT SUM(netwt) FROM {DBNAME}Quotationmanagement_dcbdesignInfo WHERE QuotationNo = DI.iStore_QuotationNo),0) * ISNULL(DI.IsSplits_Quotation_Quantity,0)))), ISNULL(DI.metal_type_name,''), 'pure'), 0)",
+      "desc": "Required pure weight from design/quotation",
+      "grp": "metal_weight",
+      "unit": "gms",
+      "aliases": [
+        "required pure weight",
+        "quotation pure weight",
+        "quotation pure wt"
+      ]
     },
     "Quantity": {
       "sql": "IsSplits_Quotation_Quantity",
@@ -644,6 +1138,15 @@
       "grp": "manufacturing",
       "fo": true
     },
+    "salesrep_master_customercode": {
+      "sql": "",
+      "type": "string",
+      "calc": true,
+      "de": "(SELECT ISNULL(U.customercode,'') FROM {DBNAME}Usermanagement_systemloginmaster U WHERE U.id = DI.customer_salesrep_id)",
+      "desc": "Sales rep user code (master lookup)",
+      "grp": "customer",
+      "not_in_where": true
+    },
     "customer_salesrep_customercode": {
       "sql": "customer_salesrep_customercode",
       "type": "string",
@@ -718,9 +1221,36 @@
     "brand": "brandname",
     "jadau": "jadauname",
     "order type": "OrderTypeName",
+    "progress": "department",
+    "progress status": "department",
+    "production stage": "department",
+    "priority": "priority",
+    "job priority": "priority",
     "make type": "maketypename",
     "job type": "jobtype",
-    "sales rep": "customer_salesrep_customercode"
+    "jobtype": "jobtype",
+    "quotation": "QuotationNo",
+    "quote": "QuotationNo",
+    "quotation no": "QuotationNo",
+    "quotation status": "has_quotation",
+    "sales rep": "customer_salesrep_customercode",
+    "collection": "collectionname",
+    "subcategory": "SubCategory",
+    "sub category": "SubCategory",
+    "diamond color": "diaColor",
+    "diamond colour": "diaColor",
+    "diamond quality": "diaQuality",
+    "dia quality": "diaQuality",
+    "engaged stage": "engage_productionstatusname",
+    "engage status": "engage_productionstatusname",
+    "order no": "Srorderno",
+    "sr order no": "Srorderno",
+    "batch": "Batch_No",
+    "batch no": "Batch_No",
+    "po": "CPO",
+    "customer po": "CPO",
+    "company job": "IsCompanyJob",
+    "sales order": "IsCompanyJob"
   },
   "filter_key_map": {
     "category": "category",
@@ -731,7 +1261,10 @@
     "brand": "brandname",
     "brandname": "brandname",
     "department": "department",
+    "progress": "department",
+    "status": "department",
     "current_department": "Current_Departmentname",
+    "priority": "priority",
     "jobtype": "jobtype",
     "job_type": "jobtype",
     "order_type": "OrderTypeName",
@@ -761,6 +1294,32 @@
     "ismovetowip": "ismovetowip",
     "productionstatusid": "MasterManagement_productionstatusid",
     "statusid": "MasterManagement_productionstatusid",
+    "collection": "collectionname",
+    "collectionname": "collectionname",
+    "subcategory": "SubCategory",
+    "sub_category": "SubCategory",
+    "srorderno": "Srorderno",
+    "sr_order_no": "Srorderno",
+    "order_no": "Srorderno",
+    "version": "Srversionname",
+    "batch": "Batch_No",
+    "batch_no": "Batch_No",
+    "batchnumber": "batchnumber",
+    "po": "CPO",
+    "cpo": "CPO",
+    "customer_po": "CPO",
+    "mfgdesign": "mfgdesign",
+    "engaged_stage": "engage_productionstatusname",
+    "engage_status": "engage_productionstatusname",
+    "company_job": "IsCompanyJob",
+    "sales_order": "IsCompanyJob",
+    "has_quotation": "has_quotation",
+    "from_quotation": "has_quotation",
+    "from_quote": "has_quotation",
+    "created_from_quote": "has_quotation",
+    "quotation_job": "has_quotation",
+    "quotation_no": "QuotationNo",
+    "quote_no": "QuotationNo",
     "start_date": "_date",
     "end_date": "_date"
   },
@@ -991,6 +1550,179 @@
         "expected start age",
         "days to start",
         "overdue days"
+      ]
+    },
+    "plasticwt": {
+      "type": "weight",
+      "label": "Plastic weight",
+      "aliases": [
+        "plastic weight",
+        "plastic wt"
+      ]
+    },
+    "Diamond_actualusedgm": {
+      "type": "weight",
+      "label": "Diamond used (gms)",
+      "aliases": [
+        "diamond used grams",
+        "diamond gm",
+        "diamond grams"
+      ]
+    },
+    "ColorStone_actualusedgm": {
+      "type": "weight",
+      "label": "Colourstone used (gms)",
+      "aliases": [
+        "colourstone used grams",
+        "cs gm",
+        "cs grams"
+      ]
+    },
+    "solitairepcs": {
+      "type": "count",
+      "label": "Solitaire pieces",
+      "aliases": [
+        "solitaire pieces",
+        "solitaire pcs",
+        "solitaires"
+      ]
+    },
+    "solitairewt": {
+      "type": "weight",
+      "label": "Solitaire weight",
+      "aliases": [
+        "solitaire weight",
+        "solitaire wt",
+        "solitaire ctw"
+      ]
+    },
+    "gemstonepcs": {
+      "type": "count",
+      "label": "Gemstone pieces",
+      "aliases": [
+        "gemstone pieces",
+        "gemstone pcs",
+        "gemstones"
+      ]
+    },
+    "gemstonewt": {
+      "type": "weight",
+      "label": "Gemstone weight",
+      "aliases": [
+        "gemstone weight",
+        "gemstone wt",
+        "gemstone ctw"
+      ]
+    },
+    "EngagedFinding_pure": {
+      "type": "weight",
+      "label": "Engaged finding (pure)",
+      "aliases": [
+        "engaged finding pure",
+        "pure engaged finding",
+        "engaged finding pure wt"
+      ]
+    },
+    "promise_age": {
+      "type": "count",
+      "label": "Days entry-to-promise",
+      "aliases": [
+        "promise age",
+        "days to promise",
+        "promise days",
+        "entry to promise days"
+      ]
+    },
+    "current_age": {
+      "type": "count",
+      "label": "Job age (days)",
+      "aliases": [
+        "job age",
+        "current age",
+        "days in progress",
+        "age of job"
+      ]
+    },
+    "Total_DiamondPcs_quot": {
+      "type": "count",
+      "label": "Required diamond pcs",
+      "aliases": [
+        "required diamond pcs",
+        "quotation diamond pcs",
+        "required diamond pieces"
+      ]
+    },
+    "Total_DiamondCtw_quot": {
+      "type": "weight",
+      "label": "Required diamond ctw",
+      "aliases": [
+        "required diamond ctw",
+        "quotation diamond weight",
+        "required diamond weight",
+        "required diamond ctw with loss"
+      ]
+    },
+    "Total_CsPcs_quot": {
+      "type": "count",
+      "label": "Required cs pcs",
+      "aliases": [
+        "required cs pcs",
+        "quotation cs pcs",
+        "required colourstone pieces"
+      ]
+    },
+    "Total_CSCtw_quot": {
+      "type": "weight",
+      "label": "Required cs ctw",
+      "aliases": [
+        "required cs ctw",
+        "quotation cs weight",
+        "required colourstone weight"
+      ]
+    },
+    "Total_miscPcs_quot": {
+      "type": "count",
+      "label": "Required misc pcs",
+      "aliases": [
+        "required misc pcs",
+        "quotation misc pcs"
+      ]
+    },
+    "Total_miscCtw_quot": {
+      "type": "weight",
+      "label": "Required misc ctw",
+      "aliases": [
+        "required misc ctw",
+        "quotation misc weight"
+      ]
+    },
+    "GrossWeight_quot": {
+      "type": "weight",
+      "label": "Quotation gross weight",
+      "aliases": [
+        "quotation gross weight",
+        "quotation gross wt",
+        "planned gross weight"
+      ]
+    },
+    "NetWt_quot": {
+      "type": "weight",
+      "label": "Required net weight",
+      "aliases": [
+        "required net weight",
+        "quotation net weight",
+        "quotation net wt",
+        "planned net weight"
+      ]
+    },
+    "Total_PurWt_quot": {
+      "type": "weight",
+      "label": "Required pure weight",
+      "aliases": [
+        "required pure weight",
+        "quotation pure weight",
+        "quotation pure wt",
+        "planned pure weight"
       ]
     },
     "total_count": {
@@ -1381,7 +2113,87 @@
       "wax setting": "Wax Setting",
       "sprue cutting": "Sprue Cutting",
       "sprue grinding": "Sprue Grinding",
-      "pending": "Pending"
+      "pending": "Pending",
+      "pending request": "Pending Request",
+      "bagging running": "Bagging Running",
+      "bagging completed": "Bagging Completed",
+      "bagging complete": "Bagging Completed",
+      "wax engage": "Wax Engage",
+      "wax engage running": "Wax Engage Running",
+      "wax engage completed": "Wax Engage Completed",
+      "wax engage complete": "Wax Engage Completed",
+      "wax engagement": "Wax Engage",
+      "rpt": "RPT",
+      "gold central": "Gold Central",
+      "tng": "TNG",
+      "qc": "QC",
+      "qc after repairing": "QC",
+      "quality check": "QC",
+      "quality control": "QC",
+      "cad": "CAD",
+      "cnc": "CNC",
+      "cad cnc": "CAD-CNC",
+      "cad-cnc": "CAD-CNC",
+      "cadcam": "CAD",
+      "cad cam": "CAD-CAM",
+      "bag preparation": "Bag Preparation",
+      "bag preparation wax setting": "Bag Preparation",
+      "bag prep": "Bag Preparation",
+      "out source": "Out Source",
+      "outsource": "Out Source",
+      "outsourced": "Out Source"
+    },
+    "jobtype": {
+      "regular": "Regular Job",
+      "regular job": "Regular Job",
+      "regular jobs": "Regular Job",
+      "sample": "Sample Line Job",
+      "sample job": "Sample Line Job",
+      "sample line": "Sample Line Job",
+      "sample line job": "Sample Line Job",
+      "sample line jobs": "Sample Line Job",
+      "repair": "Repair Job",
+      "repair job": "Repair Job",
+      "repair jobs": "Repair Job",
+      "repairing": "Repair Job",
+      "recast": "Recast Job",
+      "recast job": "Recast Job",
+      "recast jobs": "Recast Job",
+      "recasting": "Recast Job"
+    },
+    "OrderTypeName": {
+      "regular": "Regular",
+      "regular order": "Regular",
+      "corporate": "Corporate",
+      "corprate": "Corporate",
+      "corporate order": "Corporate",
+      "rnd": "RND",
+      "r&d": "RND",
+      "r n d": "RND",
+      "rnd order": "RND",
+      "research": "RND",
+      "research and development": "RND"
+    },
+    "IsCompanyJob": {
+      "sales order": "Sales Order",
+      "salesorder": "Sales Order",
+      "company job": "Sales Order"
+    },
+    "has_quotation": {
+      "1": "Yes",
+      "0": "No",
+      "true": "Yes",
+      "false": "No",
+      "yes": "Yes",
+      "created from quote": "Yes",
+      "created from quotation": "Yes",
+      "from quote": "Yes",
+      "from quotation": "Yes",
+      "quotation": "Yes",
+      "quoted": "Yes",
+      "no": "No",
+      "direct": "No",
+      "not from quote": "No"
     },
     "Current_Departmentname": {
       "polishing": "Polish",

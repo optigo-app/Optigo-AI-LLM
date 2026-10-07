@@ -5,6 +5,7 @@ Run: python -m unittest tests.test_query_planner -v
 """
 import unittest
 from datetime import date, timedelta
+from unittest.mock import AsyncMock, patch
 
 _TODAY = date.today().isoformat()
 
@@ -14,6 +15,8 @@ from app.services.query_planner import (
     _apply_ranking_overrides,
     _apply_dimension_words,
     _apply_metric_override,
+    finalize_query,
+    plan_query,
 )
 from app.services.semantic_query_parser import ParseResult
 
@@ -491,6 +494,155 @@ class PresetResolutionTests(unittest.TestCase):
         r = DateRange(preset="next_month").resolved()
         self.assertEqual(r["start_date"][:7],
                          (today.replace(day=28) + timedelta(days=5)).strftime("%Y-%m"))
+
+
+class ParseFailureSafetyTests(unittest.TestCase):
+    """An LLM outage must never surface a confident unfiltered grand total."""
+
+    def test_failure_result_clarifies(self):
+        from app.services.semantic_query_parser import _parse_failure_result
+        p = _parse_failure_result("sales_report")
+        self.assertEqual(p.confidence, 0.0)
+        self.assertTrue(p.clarify)
+
+    def test_explicit_zero_confidence_not_inflated(self):
+        # `x or 0.8` would silently turn a genuine 0.0 into 0.8.
+        p = ParseResult({"report_key": "sales_report", "metric": "Amount",
+                         "confidence": 0.0})
+        self.assertEqual(p.confidence, 0.0)
+
+
+class CountVsUnitIntentTests(unittest.TestCase):
+    """'how many <unit>' is a weight/quantity question, not a row count."""
+
+    def test_how_many_units_is_weight(self):
+        from app.services.metric_validator import _detect_intent_type
+        for q in ("how many grams of gold", "how many carats in stock",
+                  "number of grams used", "how many kg of silver"):
+            self.assertEqual(_detect_intent_type(q), "weight", q)
+
+    def test_how_many_entities_still_count(self):
+        from app.services.metric_validator import _detect_intent_type
+        for q in ("how many bills", "how many customers", "total orders",
+                  "number of designs"):
+            self.assertEqual(_detect_intent_type(q), "count", q)
+
+    def test_weight_metric_not_overridden_to_count(self):
+        from app.services.metric_validator import validate_metric_intent
+        # LLM picked the right metric — leave it alone.
+        self.assertEqual(
+            validate_metric_intent("grosswt", "how many grams of gold",
+                                   "sales_report"), "grosswt")
+        # LLM picked the wrong type — fall back to a weight metric, never
+        # total_count.
+        self.assertEqual(
+            validate_metric_intent("Amount", "how many grams of gold",
+                                   "sales_report"), "grosswt")
+
+    def test_planner_keeps_sum_for_unit_question(self):
+        p = _parse("how many grams of gold", metric="grosswt")
+        _apply_deterministic_override(p, "how many grams of gold")
+        self.assertEqual(p.metric, "grosswt")
+        self.assertEqual(p.aggregation, "sum")
+
+    def test_planner_counts_entities(self):
+        p = _parse("how many bills")
+        _apply_deterministic_override(p, "how many bills")
+        self.assertEqual(p.aggregation, "count")
+
+
+class AliasWordBoundaryTests(unittest.TestCase):
+    """validate_metric_intent must not substring-match short aliases."""
+
+    def test_short_alias_no_substring_match(self):
+        from unittest.mock import patch
+        from app.services import metric_validator
+        fake_catalog = {
+            "total_count": {"type": "count", "aliases": []},
+            "wrong_metric": {"type": "count", "aliases": ["it"]},
+        }
+        with patch.object(metric_validator, "_get_metric_catalog",
+                          return_value=fake_catalog):
+            # 'it' substring-matches inside 'without' — a raw `in` check would
+            # pick wrong_metric; word boundaries fall back to total_count.
+            self.assertEqual(
+                metric_validator.validate_metric_intent(
+                    "Amount", "how many items without", "sales_report"),
+                "total_count")
+
+
+class DatePredicateStripTests(unittest.TestCase):
+    def test_and_inside_literal_preserved(self):
+        from app.services.query_planner import _strip_date_predicates
+        p = ParseResult({
+            "report_key": "sales_report", "metric": "Amount",
+            "date_filter": {"start": "2026-08-01", "end": "2026-08-31"},
+            "ai_where": ("DI.EntryDate >= '2026-08-01' AND "
+                         "ISNULL(DI.CustomerFullName,'') LIKE '%Rock and Roll%'"),
+        })
+        _strip_date_predicates(p)
+        # Date clause dropped; the AND inside the LIKE literal must survive
+        # intact — a naive \bAND\b split mangles it into broken SQL.
+        self.assertEqual(
+            p.ai_where,
+            "ISNULL(DI.CustomerFullName,'') LIKE '%Rock and Roll%'")
+
+
+class DroppedFilterNoticeTests(unittest.TestCase):
+    def test_invalid_filter_value_recorded(self):
+        p = ParseResult({"report_key": "sales_report", "metric": "Amount",
+                         "filters": {"categoryname": "total"}})
+        plan = p.to_query_plan("category total sales")
+        plan.validate_against_registry()
+        vf = plan.validated_filters()
+        # 'total' is an invalid value for categoryname — dropped, and the
+        # drop is recorded so the answer can disclose it.
+        self.assertNotIn("categoryname", vf)
+        self.assertEqual(plan.dropped_filters, ["categoryname"])
+
+
+class KeywordRoutingHintTests(unittest.IsolatedAsyncioTestCase):
+    """Keyword routing is a hint — the LLM (full catalog) may overrule it;
+    frontend/intent routes still lock the catalog."""
+
+    _REG = {"sales_report": None, "order_report": None}
+
+    @patch("app.services.query_planner.parse_query", new_callable=AsyncMock)
+    async def test_llm_overrules_keyword_pick(self, parse):
+        # 'turnover' keyword-routes to sales_report but has no intent regex.
+        parse.return_value = ParseResult(
+            {"report_key": "order_report", "metric": "Amount"})
+        result = await plan_query("show turnover please", registry=self._REG)
+        # Full catalog was offered (not locked to sales_report) ...
+        self.assertEqual(parse.call_args.kwargs["report_name"], "")
+        # ... and the LLM's valid choice wins.
+        self.assertEqual(result.plan.report_key, "order_report")
+        self.assertEqual(result.routing_source, "llm")
+
+    @patch("app.services.query_planner.parse_query", new_callable=AsyncMock)
+    async def test_keyword_pick_when_llm_report_invalid(self, parse):
+        parse.return_value = ParseResult(
+            {"report_key": "nonsense_report", "metric": "Amount"})
+        result = await plan_query("show turnover please", registry=self._REG)
+        self.assertEqual(result.plan.report_key, "sales_report")
+        self.assertEqual(result.routing_source, "keyword")
+
+
+class ModelConfidenceTests(unittest.TestCase):
+    """The LLM's self-confidence survives routing-confidence overwrite so a
+    pinned report can still clarify on a confused parse."""
+
+    def test_model_confidence_preserved_on_frontend_route(self):
+        p = _parse("something vague", confidence=0.2)
+        result = finalize_query(p, "something vague", routing_source="frontend")
+        self.assertEqual(result.parsed.confidence, 1.0)        # routing score
+        self.assertEqual(result.parsed.model_confidence, 0.2)  # LLM's own score
+
+    def test_model_confidence_preserved_on_keyword_route(self):
+        p = _parse("something vague", confidence=0.1)
+        result = finalize_query(p, "something vague", routing_source="keyword")
+        self.assertEqual(result.parsed.confidence, 0.75)
+        self.assertEqual(result.parsed.model_confidence, 0.1)
 
 
 if __name__ == "__main__":

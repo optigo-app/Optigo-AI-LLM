@@ -2,6 +2,7 @@
   "description": "Sales invoice detail report — revenue, metals, diamonds, weights, categories, customers, sales reps",
   "sp": 240,
   "report_id": 19,
+  "date_column": "entrydate",
   "default_metric": "Amount",
   "default_dimension": "CustomerFullName",
   "tables": [
@@ -10,6 +11,25 @@
     "SideUp_Sales_Report_Job"
   ],
   "base_filter": "Stockmanagement_Statusid = 16 AND StockDocumentNo != ''",
+  "masters": [
+    "categoryname",
+    "subcategoryname",
+    "Metal_Type_Name",
+    "goldtypename",
+    "goldcolorname",
+    "producttypename",
+    "mastermanagement_brandname",
+    "Manufacturer",
+    "CustomerType",
+    "jobtype",
+    "billmode",
+    "taxfilter",
+    "orderform",
+    "Mastermanagement_FG_StockLockername",
+    "QCStatusname",
+    "collection",
+    "isWithHallMark"
+  ],
   "columns": {
     "EntryDate": {
       "sql": "EntryDate",
@@ -650,6 +670,42 @@
       "desc": "Job classification (sample line job / Regular Job) — derived from IsSampleLineJob",
       "grp": "manufacturing"
     },
+    "billmode": {
+      "sql": "billmode",
+      "type": "string",
+      "calc": true,
+      "de": "ISNULL(DI.billmode,'')",
+      "desc": "Bill Mode (Jewellery Sale / Labour Sale / Repair Sale)",
+      "grp": "sale",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "bill mode",
+          "sale mode",
+          "sale type",
+          "bill type",
+          "mode"
+        ]
+      }
+    },
+    "taxfilter": {
+      "sql": "taxfilter",
+      "type": "string",
+      "calc": true,
+      "de": "ISNULL(DI.taxfilter,'')",
+      "desc": "Tax mode (With Tax / Without Tax)",
+      "grp": "financial",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "tax mode",
+          "tax filter",
+          "with tax",
+          "without tax",
+          "tax status"
+        ]
+      }
+    },
     "orderform": {
       "sql": "orderform",
       "type": "string",
@@ -954,8 +1010,13 @@
     "customer name": "CustomerFullName",
     "customer identity": "CustomerIdentity",
     "client": "CustomerFullName",
+    "company": "CustomerFullName",
+    "company name": "CustomerFullName",
+    "firm": "CustomerFullName",
     "design": "designno",
     "design no": "designno",
+    "design code": "designno",
+    "designcode": "designno",
     "sales rep": "SalesRep",
     "salesperson": "SalesRep",
     "category": "categoryname",
@@ -967,6 +1028,7 @@
     "gold colour": "goldcolorname",
     "gold color": "goldcolorname",
     "product type": "producttypename",
+    "job type": "jobtype",
     "brand": "mastermanagement_brandname",
     "supplier": "Manufacturer",
     "bill": "StockDocumentNo",
@@ -977,7 +1039,13 @@
     "job no": "J_Jobno",
     "jobno": "J_Jobno",
     "sku": "SKUNO",
-    "barcode": "StockBarcode"
+    "barcode": "StockBarcode",
+    "bill mode": "billmode",
+    "sale mode": "billmode",
+    "sale type": "billmode",
+    "bill type": "billmode",
+    "tax mode": "taxfilter",
+    "tax status": "taxfilter"
   },
   "filter_key_map": {
     "category": "categoryname",
@@ -1029,6 +1097,14 @@
     "skuno": "SKUNO",
     "designno": "designno",
     "design": "designno",
+    "bill_mode": "billmode",
+    "billmode": "billmode",
+    "sale_mode": "billmode",
+    "sale_type": "billmode",
+    "bill_type": "billmode",
+    "tax_mode": "taxfilter",
+    "taxfilter": "taxfilter",
+    "tax_status": "taxfilter",
     "start_date": "_date",
     "end_date": "_date",
     "supplier": "Manufacturer"
@@ -1223,7 +1299,9 @@
     "total_count": {
       "type": "count",
       "label": "Bill Count",
-      "companions": ["Amount"],
+      "companions": [
+        "Amount"
+      ],
       "aliases": [
         "how many bills",
         "bill count",
@@ -2073,6 +2151,34 @@
     }
   },
   "canonical_values": {
+    "billmode": {
+      "jewelry": "ewel",
+      "jewellery": "ewel",
+      "jewelry sale": "ewel",
+      "jewellery sale": "ewel",
+      "jewelery": "ewel",
+      "labour": "abour",
+      "labor": "abor",
+      "labour sale": "abour",
+      "labor sale": "abor",
+      "repair": "Repair",
+      "repairs": "Repair",
+      "repair sale": "Repair",
+      "repairing": "Repair"
+    },
+    "taxfilter": {
+      "with tax": "With Tax",
+      "tax": "With Tax",
+      "taxable": "With Tax",
+      "with gst": "With Tax",
+      "without tax": "Without Tax",
+      "no tax": "Without Tax",
+      "non tax": "Without Tax",
+      "nontax": "Without Tax",
+      "non taxable": "Without Tax",
+      "without gst": "Without Tax",
+      "exempt": "Without Tax"
+    },
     "categoryname": {
       "rings": "Ring",
       "ring": "Ring",
@@ -2098,7 +2204,11 @@
   },
   "report_keywords": [
     "sales",
+    "sale",
     "sell",
+    "bill",
+    "bills",
+    "product type",
     "revenue",
     "business",
     "turnover",

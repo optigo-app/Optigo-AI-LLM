@@ -220,7 +220,12 @@ class BlockModelValidationTests(unittest.TestCase):
         raw = block_builder.build_entity_choice_block("ThGems", "What does ThGems refer to?")
         block = ChoiceInputBlock(**raw)
         self.assertEqual(block.field, "entity_type")
-        self.assertEqual(block.options[0].message, "Customer: ThGems")
+        labels = [o.label for o in block.options]
+        self.assertIn("Design", labels)
+        self.assertIn("Customer", labels)
+        self.assertEqual(len(block.options), 8)
+        customer_opt = next(o for o in block.options if o.label == "Customer")
+        self.assertEqual(customer_opt.message, "Customer: ThGems")
 
     def test_date_range_input_block(self):
         raw = block_builder.build_date_range_input_block("Select another range")
