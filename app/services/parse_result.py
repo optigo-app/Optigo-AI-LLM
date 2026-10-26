@@ -247,6 +247,42 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
         )
         return ""
 
+    # Guard 1b: normalize bare identifier operands. The LLM sometimes emits
+    # 'Designcode IS NOT NULL' without the DI. prefix — those bypass the
+    # column check below and hit the SP as invalid columns (stat_code=1001).
+    # Resolve each bare operand against columns + dimension aliases and
+    # rewrite to DI.<col>; an unresolvable operand means the clause points
+    # outside the governed schema — nullify it.
+    valid_cols = _get_cached_valid_columns(report_key)
+    _SQL_WORDS = {
+        "is", "not", "null", "and", "or", "like", "in", "between", "exists",
+        "case", "when", "then", "else", "asc", "desc",
+    }
+    bare_operands = re.findall(
+        r"(?<![\w.'\"])([A-Za-z_][A-Za-z0-9_]*)\s*"
+        r"(?=(?:IS\s|NOT\s|LIKE\s|IN\s|BETWEEN\s|=|<>|!=|>=|<=|>|<))",
+        ai_where,
+    )
+    if bare_operands:
+        from app.services.column_registry import get_dimension_aliases
+        dim_aliases = get_dimension_aliases(report_key) or {}
+        for ident in set(bare_operands):
+            low = ident.lower()
+            if low in _SQL_WORDS:
+                continue
+            target = ident if low in valid_cols else dim_aliases.get(low)
+            if not target:
+                logger.warning(
+                    "ai_where validation: bare identifier %r is not a column "
+                    "or dimension alias — nullifying ai_where: %s",
+                    ident, ai_where[:100],
+                )
+                return ""
+            ai_where = re.sub(
+                rf"(?<![\w.'\"]){re.escape(ident)}\b", f"DI.{target}",
+                ai_where,
+            )
+
     # Guard 2b: drop AND-ed clauses whose literal is a declared-invalid filter
     # value for the DI column they reference (e.g. the LLM leaks a metric word
     # like 'diamond' into a CustomerName LIKE clause). Runs on the raw clause —
@@ -322,7 +358,6 @@ def validate_ai_where(ai_where: str, report_key: str = "sales_report") -> str:
         return ""
 
     # Guard 2c: Validate all DI.<column> references against the column registry
-    valid_cols = _get_cached_valid_columns(report_key)
     refs = re.findall(r'DI\.(\w+)', ai_where, re.IGNORECASE)
 
     for ref in refs:

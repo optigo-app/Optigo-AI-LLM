@@ -34,6 +34,7 @@ from app.services.catalog_builder import (  # noqa: F401
 )
 from app.services.metric_validator import (  # noqa: F401
     _detect_intent_type,
+    _detect_intent_types,
     validate_metric_intent,
     get_metric_unit,
     get_metric_unit_label,
@@ -184,7 +185,19 @@ async def parse_query(
             result = retry
             data = json.loads(result.text)
         parsed = ParseResult(data)
-        if parsed.confidence < 0.75:
+        # Cheap models report conf=0.0 on perfectly valid parses — resending
+        # the full catalog to the strong tier doubles token cost for no gain.
+        # Only retry when the parse is structurally unusable (no report, or a
+        # metric that resolves against no catalog entry); the deterministic
+        # guards downstream catch real content mistakes.
+        from app.services.column_registry import resolve_metric_alias
+        _catalog = _get_metric_catalog(parsed.report_key) if parsed.report_key else {}
+        _usable = bool(
+            _catalog
+            and parsed.metric
+            and (parsed.metric in _catalog or resolve_metric_alias(parsed.report_key, parsed.metric))
+        )
+        if parsed.confidence < 0.75 and not _usable:
             try:
                 stronger = await llm_gateway.chat(
                     tier="strong", messages=messages, temperature=0.0, max_tokens=600,
@@ -232,11 +245,15 @@ async def parse_query(
         if parsed.extra_metrics:
             catalog = _get_metric_catalog(parsed.report_key)
             primary_type = catalog.get(parsed.metric, {}).get("type", "amount")
+            intent_types = _detect_intent_types(question)
             valid_extras = []
             dropped_extras = []
             for em in parsed.extra_metrics:
                 em_type = catalog.get(em, {}).get("type", primary_type)
-                if em_type == primary_type:
+                # Multi-intent questions ('diamond wt and pcs' = weight AND
+                # count) legitimately mix types — keep an extra whose type
+                # the question actually asked for.
+                if em_type == primary_type or em_type in intent_types:
                     valid_extras.append(em)
                 else:
                     dropped_extras.append(em)

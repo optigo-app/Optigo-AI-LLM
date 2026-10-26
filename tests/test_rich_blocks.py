@@ -395,6 +395,31 @@ class NoDataBlocksTests(unittest.TestCase):
         self.assertEqual(picker.start_field, "start_date")
         self.assertEqual(picker.end_field, "end_date")
 
+    def test_no_picker_when_date_was_explicit(self):
+        # "today total sales" -> date resolved from the question itself; an
+        # empty result is a real answer, not a missing-input clarify.
+        blocks = block_builder.build_no_data_blocks(
+            "Total Sales",
+            {"start_date": "2026-10-08", "end_date": "2026-10-08"},
+            "Sales Report",
+            date_was_explicit=True,
+        )
+        types = [b.get("type") for b in blocks]
+        self.assertNotIn("date_range_input", types)
+        self.assertIn("period", types)
+        suggestions = next(b for b in blocks if b.get("type") == "suggestions")
+        self.assertEqual(suggestions["items"][0], "Try a different date range")
+
+    def test_picker_kept_for_assumed_date(self):
+        blocks = block_builder.build_no_data_blocks(
+            "Total Sales",
+            {"start_date": "2026-10-01", "end_date": "2026-10-08"},
+            "Sales Report",
+            date_was_explicit=False,
+        )
+        types = [b.get("type") for b in blocks]
+        self.assertIn("date_range_input", types)
+
     def test_no_period_block_without_filters(self):
         blocks = block_builder.build_no_data_blocks(
             "Total Sales", {}, "Sales Report",

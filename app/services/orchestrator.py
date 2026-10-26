@@ -179,9 +179,18 @@ def compute_previous_period(
         from datetime import date as _date
         s = _date.fromisoformat(cur_start)
         e = _date.fromisoformat(cur_end)
-        duration = (e - s).days + 1
-        prev_end = s - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=duration - 1)
+        if s.day == 1 and (e + timedelta(days=1)).day == 1:
+            # Whole calendar month(s): shift by months, not by day count —
+            # Sept (30d) should compare to full Aug, not Aug 2-31.
+            months = (e.year - s.year) * 12 + (e.month - s.month) + 1
+            prev_end = s - timedelta(days=1)
+            prev_start = prev_end.replace(day=1)
+            for _ in range(months - 1):
+                prev_start = (prev_start - timedelta(days=1)).replace(day=1)
+        else:
+            duration = (e - s).days + 1
+            prev_end = s - timedelta(days=1)
+            prev_start = prev_end - timedelta(days=duration - 1)
     else:
         return None
 

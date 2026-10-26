@@ -45,6 +45,7 @@ FROM (
             Job.Job_customercode,
             Job.Job_customerfirmname,
             Job.jobdate,
+            Job.promisedate,
             Job.Designcode,
             Job.jobflowfrom,
             Job.issupplierissue,
@@ -87,7 +88,7 @@ FROM (
             END AS SoldPending
         FROM (
             SELECT SKUNO, po, systemloginmaster_customerid, Job_customercode, Job_customerfirmname,
-                   jobdate, Designcode, jobflowfrom, issupplierissue, isdesignsetjob,
+                   jobdate, promisedate, Designcode, jobflowfrom, issupplierissue, isdesignsetjob,
                    designsetnolist, JobManagement_ProgressStatusMasterid, Job_Quantity,
                    job_RemainingQuantity, IsCustomizeJob, isdelete, systemloginmaster_salesrepid,
                    IsSampleLineJob, Quotation_SKUNo, QuotationNo, loginUserCode, JobNo,
@@ -104,7 +105,7 @@ FROM (
               AND jobflowfrom NOT IN ('advfgpurchaseneworder', 'ReceiveToRepair')
             UNION ALL
             SELECT SKUNO, po, systemloginmaster_customerid, Job_customercode, Job_customerfirmname,
-                   jobdate, Designcode, jobflowfrom, issupplierissue, isdesignsetjob,
+                   jobdate, promisedate, Designcode, jobflowfrom, issupplierissue, isdesignsetjob,
                    designsetnolist, JobManagement_ProgressStatusMasterid, Job_Quantity,
                    job_RemainingQuantity, IsCustomizeJob, isdelete, systemloginmaster_salesrepid,
                    IsSampleLineJob, Quotation_SKUNo, QuotationNo, loginUserCode, JobNo,

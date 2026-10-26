@@ -488,7 +488,18 @@ def _apply_attribute_lookup(parsed: ParseResult, question: str) -> None:
         # are excluded: a trailing 'this month'/'in 2025' is a time qualifier,
         # not an attribute lookup ('top 5 design ... in this month' would
         # otherwise corrupt metric=Amount -> metric='month').
+        if re.search(
+            r"\b(top|bottom|best|worst|highest|lowest|least|most|"
+            r"leading|largest|smallest|cheapest)\b", q,
+        ):
+            # 'highest selling category' — the trailing noun is the ranking
+            # dimension, not an attribute to look up.
+            return
         q_clean = q.rstrip(" ?.!")
+        if re.search(r"\b(by|per|each)\s+[a-z]+$", q_clean):
+            # 'break it down by customer' ends with a dimension alias but the
+            # 'by X' makes it a group-by, not an attribute lookup.
+            return
         for cname, meta in columns.items():
             if str(meta.get("type", "")).lower() not in ("string", "text"):
                 continue
@@ -561,6 +572,130 @@ def _apply_dimension_words(parsed: ParseResult, question: str) -> None:
             return
 
 
+_SUPPLIER_WORD_RE = re.compile(
+    r"\b(manufactur\w*|supplier|vendor|mfg|maker)\b", re.IGNORECASE)
+_CUSTOMER_DIM_WORD_RE = re.compile(
+    r"\b(compan\w+|firms?|customers?|clients?|parties|party|accounts?)\b",
+    re.IGNORECASE)
+
+# Abbreviated diamond-metric phrases like "Comp. Dia. Ctw" / "Cust. Dia. PCS"
+# are single-metric asks, NOT requests to group by manufacturer/customer.
+# The surrounding text "wise" is common speech; force scalar metric only.
+_DIAMOND_OWNER_METRIC_RE = re.compile(
+    r"\b(?P<owner>company|comp\.?|co\.?|customer|cust\.?|cu\.?)\b"
+    r"[-\s]*(?:wise)?[-\s]*"
+    r"(?:dia(?:mond)?)?\.?\s*"
+    r"(?P<unit>ctw|carats?|weight|wt|pcs|pieces?)\b",
+    re.IGNORECASE,
+)
+_DIAMOND_OWNER_METRIC_MAP = {
+    ("cust", "ctw"): "Cu_DiaWt", ("cust", "wt"): "Cu_DiaWt",
+    ("cust", "weight"): "Cu_DiaWt",
+    ("cust", "pcs"): "Cu_DiaPCS", ("cust", "piece"): "Cu_DiaPCS",
+    ("cust", "pieces"): "Cu_DiaPCS",
+    ("comp", "ctw"): "Co_DiaWt", ("comp", "wt"): "Co_DiaWt",
+    ("comp", "weight"): "Co_DiaWt",
+    ("comp", "pcs"): "Co_DiaPCS", ("comp", "piece"): "Co_DiaPCS",
+    ("comp", "pieces"): "Co_DiaPCS",
+    ("co", "ctw"): "Co_DiaWt", ("co", "wt"): "Co_DiaWt",
+    ("co", "weight"): "Co_DiaWt",
+    ("co", "pcs"): "Co_DiaPCS", ("co", "piece"): "Co_DiaPCS",
+    ("co", "pieces"): "Co_DiaPCS",
+    ("cu", "ctw"): "Cu_DiaWt", ("cu", "wt"): "Cu_DiaWt",
+    ("cu", "weight"): "Cu_DiaWt",
+    ("cu", "pcs"): "Cu_DiaPCS", ("cu", "piece"): "Cu_DiaPCS",
+    ("cu", "pieces"): "Cu_DiaPCS",
+}
+
+
+def _apply_diamond_owner_metric_override(
+    parsed: ParseResult, question: str
+) -> None:
+    """'Comp. Dia. Ctw' / 'Cust. Dia. PCS' / 'company wise diamond wt' are
+    shorthand for the Co_/Cu_ metrics, not a dimension breakdown."""
+    from app.services.column_registry import _REGISTRY
+    catalog = (_REGISTRY.get(parsed.report_key, {}).get("metric_catalog") or {})
+    m = _DIAMOND_OWNER_METRIC_RE.search(question)
+    if not m:
+        return
+    owner = m.group("owner").lower().rstrip(".").replace("customer", "cust")
+    if owner == "cust":
+        owner = "cust"
+    elif owner.startswith("comp"):
+        owner = "comp"
+    unit = m.group("unit").lower()
+    if unit in ("carat", "carats", "weight"):
+        unit = "ctw"
+    if unit in ("piece", "pieces"):
+        unit = "pcs"
+    target = _DIAMOND_OWNER_METRIC_MAP.get((owner, unit))
+    if not target or target not in catalog:
+        return
+    parsed.metric = target
+    parsed.aggregation = "sum"
+    parsed.dimension = None
+    parsed.limit = 1
+    parsed.sort = None
+    parsed.intent = target
+
+
+def _fix_dimension_in_metric_slot(parsed: ParseResult, question: str) -> None:
+    """'break it down by customer' / 'split by branch' — the parser put a
+    string column in the metric slot (or attribute-lookup did) when the
+    question is really a group-by. Swap it to dimension and restore the
+    report's default metric so we render a ranking, not a MAX() lookup."""
+    report_cfg = _load_registry().get(parsed.report_key, {})
+    col = (report_cfg.get("columns") or {}).get(parsed.metric)
+    if not col or str(col.get("type", "")).lower() not in ("string", "text"):
+        return
+    if parsed.dimension == parsed.metric:
+        pass  # same column in both slots — degenerate, swap below
+    else:
+        from app.services.column_registry import get_dimension_aliases
+        aliases = get_dimension_aliases(parsed.report_key)
+        q = question.lower()
+        hit = False
+        for m in _DIMENSION_WORD_RE.finditer(q):
+            word = next(g for g in m.groups() if g)
+            if (aliases.get(word) or aliases.get(word.rstrip("s"))) == parsed.metric:
+                hit = True
+                break
+        if not hit:
+            return
+    parsed.dimension = parsed.metric
+    parsed.metric = report_cfg.get("default_metric", "Amount")
+    parsed.aggregation = "sum"
+    parsed.sort = parsed.sort or "desc"
+    if not parsed.limit or parsed.limit <= 1:
+        parsed.limit = 10
+
+
+def _apply_dimension_semantics(parsed: ParseResult, question: str) -> None:
+    """'company wise' must not silently become 'supplier wise'.
+
+    LLMs often pick the Manufacturer/supplier column for 'company' because
+    supplier names look like company names. When the question uses a
+    customer-side word (company/firm/customer/party) and no supplier-side
+    word, retarget the dimension via the report's own alias map.
+    """
+    if not parsed.dimension:
+        return
+    dim_l = parsed.dimension.lower()
+    if "manufacturer" not in dim_l and "supplier" not in dim_l:
+        return
+    if _SUPPLIER_WORD_RE.search(question):
+        return  # user really asked for supplier grouping
+    m = _CUSTOMER_DIM_WORD_RE.search(question.lower())
+    if not m:
+        return
+    from app.services.column_registry import get_dimension_aliases
+    aliases = get_dimension_aliases(parsed.report_key)
+    word = m.group(1).rstrip("s")
+    target = aliases.get(word) or aliases.get("customer") or aliases.get("company")
+    if target and target != parsed.dimension:
+        parsed.dimension = target
+
+
 _DATE_PREDICATE_RE = re.compile(
     r"\b(entrydate|jobdate|month|year|week)\b|'(?:20\d{2}|\d{4}-\d{2}-\d{2}|"
     r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*)'",
@@ -590,8 +725,22 @@ _RANKING_WORD_RE = re.compile(
     r"\b(top|bottom|best|worst|first|leading|highest|lowest|least|most)\s+(\d{1,3})\b"
     r"(?!\s*(?:days?|weeks?|months?|years?|times?\b))"
 )
-_ASC_RANK_WORDS = {"bottom", "worst", "lowest", "least"}
-_DESC_RANK_WORDS = {"top", "best", "highest", "most", "leading", "first"}
+# Superlative with no count: "most valuable sold tag", "highest selling
+# category", "best customer" — a top-1 breakdown. The leading filler words
+# (selling/sold/valuable/…) are skipped; the remaining noun is resolved via
+# the report's dimension_aliases.
+_SUPERLATIVE_DIM_RE = re.compile(
+    r"\b(?P<word>top|bottom|best|worst|highest|lowest|least|most|leading|"
+    r"largest|smallest|cheapest)\b"
+    r"(?:\s+(?:selling|sold|valuable|performing|demanded|moving|paid|"
+    r"profitable|popular|common|preferred|chosen|expensive)){0,3}"
+    r"\s+(?:the\s+)?(?P<tail>[a-z][a-z -]{0,40}?)"
+    r"(?=\s+(?:in|for|on|during|this|last|today|yesterday|between)\b|\s*$)",
+    re.IGNORECASE,
+)
+_ASC_RANK_WORDS = {"bottom", "worst", "lowest", "least", "smallest", "cheapest"}
+_DESC_RANK_WORDS = {"top", "best", "highest", "most", "leading", "first",
+                    "largest"}
 
 
 def _apply_ranking_overrides(parsed: ParseResult, question: str) -> None:
@@ -614,11 +763,52 @@ def _apply_ranking_overrides(parsed: ParseResult, question: str) -> None:
                 parsed.sort = "asc"
             elif word in _DESC_RANK_WORDS:
                 parsed.sort = "desc"
-    elif parsed.dimension:
-        if re.search(r"\b(bottom|worst|lowest|least|poorest|weakest|ascending)\b", q):
-            parsed.sort = "asc"
-        elif re.search(r"\b(descending|highest|topmost)\b", q):
-            parsed.sort = "desc"
+    else:
+        # Superlative without a count — "most valuable sold tag" is a top-1
+        # breakdown, not a scalar and not a category table. The noun the user
+        # named resolves the dimension deterministically, so it also fixes an
+        # LLM that grouped by a different column.
+        sup = _SUPERLATIVE_DIM_RE.search(q)
+        resolved_dim = None
+        if sup:
+            from app.services.column_registry import get_dimension_aliases
+            aliases = get_dimension_aliases(parsed.report_key)
+            tail = sup.group("tail").strip()
+            # Earliest mention wins, longest alias on tie: "top category
+            # customer" means category, not customer.
+            _hits = [
+                (m.start(), -len(a), aliases[a])
+                for a in aliases
+                for m in [re.search(rf"\b{re.escape(a)}\b", tail)]
+                if m
+            ]
+            resolved_dim = min(_hits)[2] if _hits else None
+        if resolved_dim:
+            parsed.dimension = resolved_dim
+            parsed.sort = (
+                "asc" if sup.group("word") in _ASC_RANK_WORDS else "desc"
+            )
+            # A superlative breakdown needs a value metric — an attribute
+            # lookup may have stolen it ('highest ... category' ->
+            # MAX(categoryname)); restore the report default.
+            rcfg = _load_registry().get(parsed.report_key, {})
+            catalog = rcfg.get("metric_catalog") or {}
+            if parsed.metric and parsed.metric not in catalog:
+                parsed.metric = rcfg.get("default_metric", "Amount")
+                parsed.aggregation = "sum"
+            # A singular noun ("tag") wants exactly the top 1; a plural tail
+            # ("top designs") keeps the LLM's row count.
+            if not tail.rstrip().endswith("s"):
+                parsed.limit = 1
+        elif parsed.dimension:
+            if re.search(r"\b(bottom|worst|lowest|least|poorest|weakest|ascending)\b", q):
+                parsed.sort = "asc"
+            elif re.search(r"\b(descending|highest|topmost)\b", q):
+                parsed.sort = "desc"
+            # A plain "by/per X" breakdown asks for a list — the LLM
+            # sometimes guesses limit=1 ("Revenue per customer group").
+            if not parsed.limit or parsed.limit < 3:
+                parsed.limit = 10
 
 
 def _apply_why_breakdown(
@@ -691,6 +881,12 @@ def _apply_deterministic_override(
     _apply_attribute_lookup(parsed, question)
     _apply_metric_companions(parsed, question)
     _apply_dimension_words(parsed, question)
+    _fix_dimension_in_metric_slot(parsed, question)
+    _apply_dimension_semantics(parsed, question)
+    # Diamond-owner metric phrases ('Comp. Dia. Ctw', 'Cust. Dia. PCS',
+    # 'company wise diamond wt') are single-metric asks, not breakdowns.
+    # This runs last so it can override any dimension the helpers above added.
+    _apply_diamond_owner_metric_override(parsed, question)
     _apply_explicit_dates(parsed, question)
     _strip_date_predicates(parsed)
     _apply_ranking_overrides(parsed, question)
@@ -904,4 +1100,22 @@ async def plan_query(
         if resolved:
             parsed.report_key = resolved
             routing_source = "context"
-    return finalize_query(parsed, question, previous_filters, routing_source)
+    try:
+        return finalize_query(parsed, question, previous_filters, routing_source)
+    except ValueError as exc:
+        # The LLM's report pick can't serve its own parse (e.g. dimension
+        # 'CustomerFullName' routed to order_report). If the session's
+        # previous report — the one a follow-up like 'same breakdown' refers
+        # to — validates instead, prefer it.
+        if (
+            fallback_report
+            and fallback_report != parsed.report_key
+            and fallback_report in (registry or _load_registry())
+        ):
+            alt = ParseResult(dict(parsed.raw or {}))
+            alt.report_key = fallback_report
+            try:
+                return finalize_query(alt, question, previous_filters, "context")
+            except ValueError:
+                pass
+        raise exc

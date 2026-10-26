@@ -34,9 +34,19 @@ def _why_entity_name(filters: Dict[str, Any], spec: Optional[IntentSpec] = None)
         return str(v)
     ai = getattr(spec, "ai_where", "") if spec else ""
     if ai:
-        m = re.search(r"'([^']+)'", ai)
+        # The entity literal follows LIKE — e.g. ISNULL(FirstName,'') LIKE
+        # '%Tushar%'. Taking it directly avoids the naive 'x' regex pairing the
+        # second quote of an empty literal ('') with the next quote, which
+        # captures SQL fragments like ') LIKE ' instead of the value.
+        m = re.search(r"LIKE\s+'([^']+)'", ai, re.IGNORECASE)
         if m:
             return m.group(1).strip("% ").strip()
+        m = re.search(r"[=]\s*'([^']+)'", ai)
+        if m:
+            return m.group(1).strip()
+        for lit in re.findall(r"'([^']+)'", ai):
+            if lit.strip() and not re.search(r"[(),]|LIKE|AND|OR|NULL|CASE", lit, re.IGNORECASE):
+                return lit.strip("% ").strip()
     return ""
 
 
@@ -71,6 +81,10 @@ def _metric_header(spec: IntentSpec) -> str:
     from app.services.formatters import normalize_unit_label
     jl = normalize_unit_label(spec.unit_label)
     if spec.unit == "currency":
+        cat = _COL_REGISTRY.get(spec.report_key or "", {}).get("metric_catalog", {})
+        label = (cat.get(spec.metric_key) or {}).get("label", "")
+        if label and label.strip().lower() not in ("total sales", "sales", "revenue", "total revenue"):
+            return label
         return "Revenue"
     if spec.unit == "count":
         return "Count" + (f" ({jl})" if jl else "")
@@ -607,6 +621,7 @@ async def generate_answer(
     history: Optional[List[Dict[str, str]]] = None,
     intent_spec: Optional[IntentSpec] = None,
     response_mode: str = "normal",
+    date_was_explicit: bool = False,
 ) -> Any:
     """Generate a natural-language answer or structured blocks.
 
@@ -648,7 +663,19 @@ async def generate_answer(
         )
 
     # --- Multi-row ranking: format as a table (top-N customers, branches, etc.) ---
-    if spec.dimension and (spec.limit or 1) > 1:
+    # A top-1 breakdown (limit=1) must still render the winning entity —
+    # "most valuable sold tag" asks WHICH tag, not just the amount — so it
+    # falls back to scalar only when the returned row has no entity value.
+    _limit = spec.limit or 1
+    _top1_entity = (
+        _limit <= 1
+        and isinstance(data, dict)
+        and any(
+            str(r.get("DimensionValue") or "").strip()
+            for r in data.get("rows", [])[:1]
+        )
+    )
+    if spec.dimension and (_limit > 1 or _top1_entity):
         # 'why did X perform well' follow-ups: prepend a governed explanation
         # layer (facts computed from the executed breakdown — never invented).
         why_entity = _why_entity_name(validated_filters, spec)
@@ -699,7 +726,7 @@ async def generate_answer(
         if record_count == 0:
             result.state = "NO_DATA"
             if response_mode == "wide":
-                return block_builder.build_no_data_blocks(result.label, validated_filters, source_report)
+                return block_builder.build_no_data_blocks(result.label, validated_filters, source_report, date_was_explicit)
             return _no_data_answer(result, validated_filters)
         # aggregate returned but no rows for this dimension
         result.state = "DATA_UNVERIFIED"
@@ -707,7 +734,7 @@ async def generate_answer(
     if resolved.value == 0 and record_count == 0:
         result.state = "NO_DATA"
         if response_mode == "wide":
-            return block_builder.build_no_data_blocks(result.label, validated_filters, source_report)
+            return block_builder.build_no_data_blocks(result.label, validated_filters, source_report, date_was_explicit)
         return _no_data_answer(result, validated_filters)
 
     if resolved.value == 0:

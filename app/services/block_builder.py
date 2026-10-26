@@ -17,7 +17,10 @@ from app.services.formatters import (
     format_weight,
     normalize_unit_label,
 )
-from app.services.column_registry import get_dimension_headers as _get_dimension_headers
+from app.services.column_registry import (
+    _REGISTRY as _COL_REGISTRY,
+    get_dimension_headers as _get_dimension_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +56,14 @@ def _format_dimension_value(dim_val: str, dimension: str) -> str:
     return dim_val
 
 
-def _metric_header(unit: str, unit_label: str = "") -> str:
+def _metric_header(unit: str, unit_label: str = "", report_key: str = "", metric_key: str = "") -> str:
     """Column header for the metric in a ranking table, using jewelry-native labels."""
     jl = normalize_unit_label(unit_label)
     if unit == "currency":
+        report_cfg = _COL_REGISTRY.get(report_key or "", {}) if report_key else {}
+        label = (report_cfg.get("metric_catalog", {}).get(metric_key) or {}).get("label", "")
+        if label and label.strip().lower() not in ("total sales", "sales", "revenue", "total revenue"):
+            return label
         return "Revenue"
     if unit == "count":
         return "Count" + (f" ({jl})" if jl else "")
@@ -394,7 +401,8 @@ def build_ranking_blocks(
 
     limit = getattr(spec, "limit", None) or 1
     dim_header = _dim_header(getattr(spec, "dimension", ""), getattr(spec, "report_key", "sales_report"))
-    metric_hdr = _metric_header(getattr(spec, "unit", ""), getattr(spec, "unit_label", ""))
+    metric_hdr = _metric_header(getattr(spec, "unit", ""), getattr(spec, "unit_label", ""),
+                                getattr(spec, "report_key", ""), getattr(spec, "metric_key", ""))
     unit = getattr(spec, "unit", "")
     unit_label = getattr(spec, "unit_label", "")
 
@@ -443,12 +451,15 @@ def build_ranking_blocks(
     _is_time = dimension_name.lower() in ("date", "entrydate", "jobdate", "month", "year", "week")
     _rank_col = "#" if _is_time else "Rank"
     blocks.append({"type": "table", "columns": [_rank_col, dim_header, metric_hdr], "rows": table_rows, "raw_data": raw_rows})
-    _total_label = (f"Total {metric_hdr.lower()} across {len(rows_data)} periods" if _is_time
-                    else f"Total {metric_hdr.lower()} for top {len(rows_data)}")
+    _lbl = metric_hdr.lower()
+    _total_base = _lbl if _lbl.startswith("total") else f"total {_lbl}"
+    _total_cap = _total_base[0].upper() + _total_base[1:]
+    _total_label = (f"{_total_cap} across {len(rows_data)} periods" if _is_time
+                    else f"{_total_cap} for top {len(rows_data)}")
     blocks.append({
         "type": "metric",
         "content": f"{_total_label}: {_format_ranking_value(total, unit, unit_label)}",
-        "raw_value": total, "unit": unit, "unit_label": unit_label, "label": f"Total {metric_hdr.lower()}",
+        "raw_value": total, "unit": unit, "unit_label": unit_label, "label": _total_cap,
     })
 
     # Add charts for ranking comparisons (2+ numeric data points)
@@ -516,7 +527,8 @@ def why_explanation(
     """
     unit = getattr(spec, "unit", "")
     unit_label = getattr(spec, "unit_label", "")
-    metric_hdr = _metric_header(unit, unit_label)
+    metric_hdr = _metric_header(unit, unit_label,
+                                getattr(spec, "report_key", ""), getattr(spec, "metric_key", ""))
     dim_header = _dim_header(getattr(spec, "dimension", ""), getattr(spec, "report_key", "sales_report"))
     entity = entity_name or "This item"
 
@@ -764,8 +776,19 @@ def build_clarify_blocks(report_key: str) -> List[Dict[str, Any]]:
     return blocks
 
 
-def build_no_data_blocks(label: str, filters: Dict[str, Any], source_report: str) -> List[Dict[str, Any]]:
-    """Build blocks for a short, user-friendly no-data response."""
+def build_no_data_blocks(
+    label: str,
+    filters: Dict[str, Any],
+    source_report: str,
+    date_was_explicit: bool = False,
+) -> List[Dict[str, Any]]:
+    """Build blocks for a short, user-friendly no-data response.
+
+    When the user explicitly gave a date (e.g. "today"), an empty result is a
+    real answer — don't pop a blocking date picker; offer a retry chip instead.
+    When the date range was a silent default, keep the picker so the user can
+    correct the assumption.
+    """
     blocks: List[Dict[str, Any]] = []
 
     # Period chip — show the date range that returned no data
@@ -777,7 +800,8 @@ def build_no_data_blocks(label: str, filters: Dict[str, Any], source_report: str
         "type": "text",
         "content": f"No {label.lower()} found for the selected filters.",
     })
-    if filters.get("start_date") or filters.get("end_date"):
+    has_dates = bool(filters.get("start_date") or filters.get("end_date"))
+    if has_dates and not date_was_explicit:
         blocks.append(build_date_range_input_block("Select another date range and try again."))
 
     suggestions = [
@@ -788,6 +812,9 @@ def build_no_data_blocks(label: str, filters: Dict[str, Any], source_report: str
         "Total diamond weight and pieces",
         "Gold amount by branch",
     ]
+    if has_dates and date_was_explicit:
+        # This phrase trips needs_date_clarification -> date picker on demand.
+        suggestions.insert(0, "Try a different date range")
 
     blocks.append({"type": "suggestions", "items": suggestions,
                    "options": _chip_options(suggestions)})
@@ -955,3 +982,109 @@ def blocks_to_text(blocks: List[Dict[str, Any]]) -> str:
             if terms:
                 parts.append("Glossary: " + "; ".join(f"{k} = {v}" for k, v in terms.items()))
     return "\n".join(p for p in parts if p)
+
+
+def merge_same_dimension_tables(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge compound-question ranking tables that share a dimension header.
+
+    "Revenue by Customer group" + "Total tax by Customer group" — the user
+    asked for one breakdown, not two. When sections (heading-delimited)
+    contain tables grouped by the same dimension, merge them into a single
+    multi-metric table under a combined heading. Sections that don't share
+    a dimension pass through untouched.
+    """
+    if not blocks or len(blocks) < 2:
+        return blocks
+
+    # Segment into heading-delimited sections (leading blocks form section 0).
+    sections: List[List[Dict[str, Any]]] = [[]]
+    for b in blocks:
+        if b.get("type") == "heading" and sections[-1]:
+            sections.append([])
+        sections[-1].append(b)
+
+    # Map each section to its first ranking table (3+ cols = rank, dim, metric).
+    def _table(sec: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        for b in sec:
+            if b.get("type") == "table" and len(b.get("columns") or []) >= 3:
+                return b
+        return None
+
+    dim_groups: Dict[str, List[int]] = {}
+    for i, sec in enumerate(sections):
+        t = _table(sec)
+        if t is not None:
+            dim_groups.setdefault(str(t["columns"][1]).strip().lower(), []).append(i)
+
+    merges = {d: idxs for d, idxs in dim_groups.items() if len(idxs) >= 2}
+    if not merges:
+        return blocks
+
+    absorbed = {j for idxs in merges.values() for j in idxs[1:]}
+    out: List[Dict[str, Any]] = []
+
+    for i, sec in enumerate(sections):
+        if i in absorbed:
+            continue
+        gdim = next((d for d, idxs in merges.items() if idxs[0] == i), None)
+        if gdim is None:
+            out.extend(sec)
+            continue
+
+        # First section of a merge group — absorb the others' tables.
+        idxs = merges[gdim]
+        tables = [_table(sections[j]) for j in idxs]
+        tables = [t for t in tables if t is not None]
+        metric_hdrs = [str(t["columns"][2]) for t in tables]
+        dim_hdr = str(tables[0]["columns"][1])
+
+        # Union of dimension values in each table's own order, blanks last.
+        order: List[str] = []
+        blank = False
+        for t in tables:
+            for row in t.get("rows") or []:
+                dv = str(row[1] if len(row) > 1 else "")
+                if not dv.strip():
+                    blank = True
+                elif dv not in order:
+                    order.append(dv)
+        if blank:
+            order.append("")
+
+        merged_rows: List[List[str]] = []
+        for rank, dv in enumerate(order[:15], 1):
+            vals = []
+            for t in tables:
+                cell = next(
+                    (row[2] for row in (t.get("rows") or [])
+                     if len(row) > 2 and str(row[1]) == dv),
+                    "—",
+                )
+                vals.append(str(cell))
+            merged_rows.append([str(rank), dv] + vals)
+
+        merged_table = dict(tables[0])
+        merged_table["columns"] = [tables[0]["columns"][0], dim_hdr] + metric_hdrs
+        merged_table["rows"] = merged_rows
+        merged_table.pop("raw_data", None)
+
+        combined_heading = " and ".join(metric_hdrs) + f" by {dim_hdr}"
+        for b in sec:
+            if b.get("type") == "heading":
+                out.append({**b, "content": combined_heading})
+            elif b is _table(sec):
+                out.append(merged_table)
+            elif b.get("type") == "chart":
+                continue  # per-metric charts don't apply to the merged table
+            else:
+                out.append(b)
+
+        # Fold the absorbed sections' non-table/chart/heading blocks (metric
+        # totals etc.) into the surviving section so no totals are lost.
+        for j in idxs[1:]:
+            for b in sections[j]:
+                if b.get("type") in ("heading", "table", "chart"):
+                    continue
+                out.append(b)
+
+    return out

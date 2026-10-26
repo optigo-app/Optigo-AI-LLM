@@ -80,6 +80,10 @@ def _ensure_table() -> None:
             conn.execute("ALTER TABLE session_context ADD COLUMN pending_json TEXT")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE session_context ADD COLUMN entities_json TEXT")
+        except sqlite3.OperationalError:
+            pass
     _table_ready = True
 
 
@@ -352,3 +356,76 @@ def clear_pending(session_id: Optional[str]) -> None:
             "UPDATE session_context SET pending_json = NULL WHERE session_id = ?",
             (session_id,),
         )
+
+
+# Cap the per-session entity index — a long session of rankings could grow
+# unbounded otherwise. Oldest entries are trimmed on write.
+_ENTITY_INDEX_MAX = 300
+
+
+def record_entities(
+    session_id: Optional[str],
+    report_key: str,
+    dimension: str,
+    values: List[str],
+) -> None:
+    """Remember which dimension values appeared in ranking answers.
+
+    Follow-up questions reference a bare value ("why did 440 perform well?")
+    that may come from a ranking several turns back — the last-turn dimension
+    alone can't resolve it after the user pivots ('break it down by
+    customer'). The index maps value -> dimension column so the ambiguous-
+    entity path can inject the right entity word.
+    """
+    if not (session_id and report_key and dimension and values):
+        return
+    _ensure_table()
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT entities_json FROM session_context WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        index = {}
+        if row and row[0]:
+            try:
+                index = json.loads(row[0])
+            except (ValueError, TypeError):
+                index = {}
+        for v in values:
+            v = str(v).strip()
+            if v:
+                index[v] = {"dimension": dimension, "report_key": report_key}
+        if len(index) > _ENTITY_INDEX_MAX:
+            index = dict(list(index.items())[-_ENTITY_INDEX_MAX:])
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            """
+            INSERT INTO session_context (session_id, report_key, entities_json, updated_at)
+            VALUES (?, '', ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                entities_json = excluded.entities_json,
+                updated_at = excluded.updated_at
+            """,
+            (session_id, json.dumps(index, default=str), now),
+        )
+
+
+def lookup_entity_dimension(session_id: Optional[str], value: str) -> Dict[str, str]:
+    """Return {'dimension': ..., 'report_key': ...} for a value seen in a
+    previous ranking answer this session, else {}."""
+    if not (session_id and value):
+        return {}
+    _ensure_table()
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT entities_json FROM session_context WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+    if not (row and row[0]):
+        return {}
+    try:
+        index = json.loads(row[0])
+    except (ValueError, TypeError):
+        return {}
+    hit = index.get(str(value).strip())
+    return dict(hit) if isinstance(hit, dict) else {}

@@ -42,6 +42,7 @@ _MISSPELLINGS: Dict[str, str] = {
     "nett": "net",
     "amout": "amount", "amont": "amount", "amt": "amount",
     "dimond": "diamond", "diamnd": "diamond", "daimond": "diamond",
+    "diamind": "diamond", "diamon": "diamond",
     "colourstone": "colourstone", "colorston": "colourstone",
     "quentity": "quantity", "quantiy": "quantity", "qty": "qty",
     "peices": "pieces", "piecs": "pieces", "peice": "piece",

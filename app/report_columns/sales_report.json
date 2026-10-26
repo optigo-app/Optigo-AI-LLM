@@ -5,6 +5,14 @@
   "date_column": "entrydate",
   "default_metric": "Amount",
   "default_dimension": "CustomerFullName",
+  "insights": ["pareto", "vs_average", "outlier", "period_delta", "deadstock"],
+  "deadstock": {
+    "metric": "unique_designs",
+    "days": 90,
+    "noun": "design",
+    "trigger_dimensions": ["designno", "Designcode", "designcode", "SKUNO", "sku"],
+    "trigger_words": "design|style|pattern|catalog|dead stock"
+  },
   "tables": [
     "Stockmanagement_dcbdesignInfo_history",
     "Stockmanagement_dcbdesignInfo_history_Archive",
@@ -104,9 +112,9 @@
     "CustomerType": {
       "sql": "CustomerType",
       "type": "string",
+      "label": "Customer group",
       "desc": "Customer segment / business class",
       "grp": "customer",
-      "fo": true,
       "filter": {
         "match": "exact",
         "aliases": [
@@ -1008,6 +1016,15 @@
     "locker": "Mastermanagement_FG_StockLockername",
     "customer": "CustomerFullName",
     "customer name": "CustomerFullName",
+    "customer group": "CustomerType",
+    "customer type": "CustomerType",
+    "customer_type": "CustomerType",
+    "customertype": "CustomerType",
+    "customergroup": "CustomerType",
+    "business class": "CustomerType",
+    "businessclass": "CustomerType",
+    "segment": "CustomerType",
+    "customer segment": "CustomerType",
     "customer identity": "CustomerIdentity",
     "client": "CustomerFullName",
     "company": "CustomerFullName",
@@ -1040,6 +1057,13 @@
     "jobno": "J_Jobno",
     "sku": "SKUNO",
     "barcode": "StockBarcode",
+    "tag": "StockBarcode",
+    "tag no": "StockBarcode",
+    "tagno": "StockBarcode",
+    "sold tag": "StockBarcode",
+    "serial": "StockBarcode",
+    "serial no": "StockBarcode",
+    "serial number": "StockBarcode",
     "bill mode": "billmode",
     "sale mode": "billmode",
     "sale type": "billmode",
@@ -1093,6 +1117,10 @@
     "jobno": "StockBarcode",
     "stockbarcode": "StockBarcode",
     "serialjobno": "StockBarcode",
+    "tag": "StockBarcode",
+    "tagno": "StockBarcode",
+    "serial": "StockBarcode",
+    "serialno": "StockBarcode",
     "sku": "SKUNO",
     "skuno": "SKUNO",
     "designno": "designno",
@@ -1285,7 +1313,10 @@
         "diamond ctw",
         "dctw",
         "diamond weight",
-        "dia ctw"
+        "diamond wt",
+        "dia ctw",
+        "dia wt",
+        "diamondwt"
       ]
     },
     "miscwt": {
@@ -1562,7 +1593,9 @@
         "co diamond pieces",
         "company diamonds",
         "company diamond count",
-        "co dia pcs"
+        "co dia pcs",
+        "comp dia pcs",
+        "comp. dia. pcs"
       ]
     },
     "Co_DiaWt": {
@@ -1573,7 +1606,11 @@
         "co diamond weight",
         "company diamond ctw",
         "company diamond carat",
-        "co dia wt"
+        "co dia wt",
+        "comp dia ctw",
+        "comp. dia. ctw",
+        "comp dia wt",
+        "comp. dia. wt"
       ]
     },
     "Cu_DiaPCS": {
@@ -1584,7 +1621,9 @@
         "cu diamond pieces",
         "customer diamonds",
         "customer diamond count",
-        "cu dia pcs"
+        "cu dia pcs",
+        "cust dia pcs",
+        "cust. dia. pcs"
       ]
     },
     "Cu_DiaWt": {
@@ -1595,7 +1634,11 @@
         "cu diamond weight",
         "customer diamond ctw",
         "customer diamond carat",
-        "cu dia wt"
+        "cu dia wt",
+        "cust dia ctw",
+        "cust. dia. ctw",
+        "cust dia wt",
+        "cust. dia. wt"
       ]
     },
     "TotalTax": {
@@ -1619,7 +1662,9 @@
     "company_diamond_pcs": {
       "patterns": [
         "\\bcompany(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
-        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b"
+        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
+        "\\bcomp\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(pcs|pieces|piece)\\b",
+        "\\bco\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(pcs|pieces|piece)\\b"
       ],
       "metric": "Co_DiaPCS",
       "aggregation": "sum",
@@ -1629,7 +1674,9 @@
     "company_diamond_weight": {
       "patterns": [
         "\\bcompany(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
-        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b"
+        "\\bco(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
+        "\\bcomp\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(wt|weight|ctw|carat)\\b",
+        "\\bco\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(wt|weight|ctw|carat)\\b"
       ],
       "metric": "Co_DiaWt",
       "aggregation": "sum",
@@ -1639,7 +1686,9 @@
     "customer_diamond_pcs": {
       "patterns": [
         "\\bcustomer(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
-        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b"
+        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(pcs|pieces|piece)\\b",
+        "\\bcust\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(pcs|pieces|piece)\\b",
+        "\\bcu\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(pcs|pieces|piece)\\b"
       ],
       "metric": "Cu_DiaPCS",
       "aggregation": "sum",
@@ -1649,7 +1698,9 @@
     "customer_diamond_weight": {
       "patterns": [
         "\\bcustomer(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
-        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b"
+        "\\bcu(?:\\s+\\w+)?\\s+(diamond|dia)\\s*(wt|weight|ctw|carat)\\b",
+        "\\bcust\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(wt|weight|ctw|carat)\\b",
+        "\\bcu\\.?\\s*dia\\.?\\s*(?:mond)?\\s*\\.?\\s*(wt|weight|ctw|carat)\\b"
       ],
       "metric": "Cu_DiaWt",
       "aggregation": "sum",

@@ -4,6 +4,15 @@
   "report_id": 22,
   "default_metric": "Amount",
   "default_dimension": "Job_customercode",
+  "insights": ["pareto", "vs_average", "outlier", "period_delta", "aging"],
+  "aging": {
+    "metric": "overdue_jobs",
+    "dimension": "Job_customerfirmname",
+    "dimension_label": "customer",
+    "days": 0,
+    "phrase": "past their promised date",
+    "noun": "order"
+  },
   "date_column": "jobdate",
   "tables": [
     "JobManagement_JobMaster",
@@ -726,6 +735,35 @@
         "pending jobs"
       ]
     },
+    "promisedate": {
+      "sql": "promisedate",
+      "type": "date",
+      "desc": "Promised/ETA delivery date",
+      "grp": "date",
+      "aliases": [
+        "promise date",
+        "eta date",
+        "delivery date",
+        "expected delivery"
+      ]
+    },
+    "overdue_jobs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "CASE WHEN DI.promisedate IS NOT NULL AND CONVERT(date, DI.promisedate) < CONVERT(date, ISNULL(dbo.UTC_CSERVERLOCAL(GETDATE()), GETDATE())) AND DI.JobManagement_ProgressStatusMasterid IN (1,12) THEN 1 ELSE 0 END",
+      "desc": "1 when the job is still remaining AND its promise date has passed (always SUM)",
+      "grp": "order",
+      "computed_only": true,
+      "aliases": [
+        "overdue jobs",
+        "late jobs",
+        "delayed orders",
+        "past eta",
+        "past due jobs",
+        "missed delivery"
+      ]
+    },
     "week": {
       "sql": "",
       "type": "string",
@@ -1016,6 +1054,19 @@
         "remaining jobs",
         "rem jobs",
         "pending jobs"
+      ]
+    },
+    "overdue_jobs": {
+      "type": "count",
+      "label": "Overdue orders",
+      "aliases": [
+        "overdue jobs",
+        "late orders",
+        "delayed orders",
+        "past eta",
+        "past due jobs",
+        "missed delivery",
+        "orders past promise date"
       ]
     },
     "total_count": {

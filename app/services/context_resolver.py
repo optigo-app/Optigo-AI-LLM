@@ -109,17 +109,27 @@ def ambiguous_entity_value(question: str) -> Optional[str]:
         re.IGNORECASE,
     )
     if not match:
-        return None
-    value = match.group(1).strip()
-    # Anything after the metric word must be empty, punctuation, a date word,
-    # or an explicit "no filters" directive. Trailing business words mean the
-    # matched phrase was never an entity ("overall total sales for brand").
-    tail = question[match.end():].strip()
-    if tail:
-        tail_clean = tail.strip(" ?.!").lower()
-        if tail_clean not in ("", "please", "without filters", "no filters",
-                              "without filter") and not _DATE_VALUE_RE.fullmatch(tail_clean):
+        # 'why did 440 perform well' — the entity sits in the 'did <X> perform'
+        # slot with no metric word after it, so the pattern above can't see
+        # it. Bare codes land here for the same design/SKU/customer clarify.
+        why_m = re.search(
+            r"\bdid\s+(?:the\s+)?([A-Za-z0-9][A-Za-z0-9._&-]*(?:\s+[A-Za-z][A-Za-z0-9._&-]*){0,3}?)\s+perform\w*\b",
+            question, re.IGNORECASE,
+        )
+        if not why_m:
             return None
+        value = why_m.group(1).strip()
+    else:
+        value = match.group(1).strip()
+        # Anything after the metric word must be empty, punctuation, a date word,
+        # or an explicit "no filters" directive. Trailing business words mean the
+        # matched phrase was never an entity ("overall total sales for brand").
+        tail = question[match.end():].strip()
+        if tail:
+            tail_clean = tail.strip(" ?.!").lower()
+            if tail_clean not in ("", "please", "without filters", "no filters",
+                                  "without filter") and not _DATE_VALUE_RE.fullmatch(tail_clean):
+                return None
     excluded = {
         "what", "show", "give", "tell", "how much", "total",
         "sale", "sales", "revenue", "amount", "value",
@@ -321,3 +331,180 @@ async def resolve_context(
     except Exception as exc:
         logger.warning("Context resolve failed (fail-soft): %s", exc)
         return question
+
+
+# ── Compound question splitting ─────────────────────────────────────────────
+# "last month highest selling category and most valuable sold tag" asks TWO
+# independent questions. Split only on top-level joins when every clause is
+# an independent information request — never inside a metric phrase
+# ("total diamond wt and pcs" is one ask served by extra_metrics) or an
+# entity name ("Tushar and Sons").
+_COMPOUND_JOIN_RE = re.compile(
+    r"\s*(?:;\s*|,\s*also\s+| and also | as well as | along with | and )",
+    re.IGNORECASE,
+)
+
+# A clause qualifies as an independent request when it asks for a ranked/top
+# entity, a "by X" breakdown, or a named metric.
+_COMPOUND_REQUEST_RE = re.compile(
+    r"\b(?:top|bottom|best|worst|highest|lowest|least|most|largest|smallest|"
+    r"average|avg|total|count|number of|how many|how much|revenue|sales|"
+    r"sale|amount|weight|tax|discount|collection|orders|jobs|value)\b"
+    r"|\bby\s+\w+|\b\w+\s+wise\b",
+    re.IGNORECASE,
+)
+
+# The split only pays off when at least one clause asks for an entity —
+# "total sales and net weight" stays single so extra_metrics renders one
+# combined metric table instead of two calls.
+_COMPOUND_ENTITY_RE = re.compile(
+    r"\b(?:top|bottom|best|worst|highest|lowest|least|most|largest|smallest)\s+\w+"
+    r"|\bby\s+\w+|\b\w+\s+wise\b",
+    re.IGNORECASE,
+)
+
+# Metric abbreviations are intra-question joins, not clause boundaries:
+# "diamond wt and pcs" asks one thing (weight + pieces).
+# A "by X" / "per X" / "X wise" modifier shared by the whole compound —
+# "Revenue and tax breakdown per customer group" applies the grouping to
+# both clauses. Stops before date/function words.
+_DIM_PHRASE_RE = re.compile(
+    r"\b(?:per|by)\s+(?:(?!\b(?:last|this|next|past|previous|in|on|at|for|from|to|and|or|during|between|the)\b)[a-z0-9]+\s*){1,3}"
+    r"|\b[a-z]+(?:\s+[a-z]+)?\s+wise\b",
+    re.IGNORECASE,
+)
+
+_COMPOUND_UNIT_ONLY_RE = re.compile(
+    r"^(?:total\s+|net\s+|gross\s+)?\w{0,12}\s*(?:wt|wts|weight|pcs|pieces|ctw|"
+    r"carat|amount|count|qty|quantity|rate|value)s?\.?$",
+    re.IGNORECASE,
+)
+
+
+def _clause_report_keys(parts: List[str]) -> List[str]:
+    """Best-match report key per clause, via report_keywords scoring.
+
+    Same scoring as the keyword classifier: word-boundary keyword hits,
+    multi-word keywords weighted by word count, generic entity nouns
+    ("jobs", "records") at half weight. Returns "" for a clause with no
+    keyword signal at all.
+    """
+    from app.services.column_registry import _REGISTRY, get_generic_routing_terms
+
+    generic = get_generic_routing_terms()
+    winners: List[str] = []
+    for part in parts:
+        lowered = part.lower()
+        best_key, best_score, best_pos = "", 0.0, 10**9
+        for report_key, cfg in _REGISTRY.items():
+            score, first_pos = 0.0, 10**9
+            for kw in cfg.get("report_keywords", []) or []:
+                m = re.search(r"\b" + re.escape(kw.lower()) + r"\b", lowered)
+                if not m:
+                    continue
+                first_pos = min(first_pos, m.start())
+                if kw.lower() in generic:
+                    score += 0.5
+                else:
+                    score += len(kw.split())
+            # Score ties go to the report whose keyword appears earliest —
+            # the leading noun is usually the clause's subject ('tax
+            # breakdown per customer group' is a tax ask, not customer).
+            if score > best_score or (score == best_score and score > 0 and first_pos < best_pos):
+                best_key, best_score, best_pos = report_key, score, first_pos
+        winners.append(best_key)
+    return winners
+
+
+def split_compound_question(question: str, max_parts: int = 3) -> List[str]:
+    """Split a compound question into independent sub-questions.
+
+    Conservative: returns ``[question]`` unless every clause is an
+    independent request AND at least one asks for an entity/breakdown —
+    OR every clause resolves to a different report (cross-report compounds
+    like "total sales and total GST" can't be served by extra_metrics,
+    which only exists within one report).
+    A shared date phrase ("last month ...") is copied onto clauses that
+    have none, so "last month X and Y" keeps both parts in-period.
+    """
+    if not question or not isinstance(question, str):
+        return [question]
+    q = question.strip().strip("?.!")
+    if len(q) > 200:
+        return [question]
+    parts = [p.strip(" ,;?.!") for p in _COMPOUND_JOIN_RE.split(q)]
+    parts = [p for p in parts if p]
+    if not (2 <= len(parts) <= max_parts):
+        return [question]
+    if not any(_COMPOUND_ENTITY_RE.search(p) for p in parts):
+        # No entity ask — still split when the clauses clearly target
+        # different reports; each must reach its own governed pipeline.
+        clause_reports = _clause_report_keys(parts)
+        if any(not r for r in clause_reports) or len(set(clause_reports)) < 2:
+            return [question]
+    for p in parts:
+        # One-word clauses are fine when they're a request word themselves —
+        # 'Revenue and tax breakdown...' splits into 'Revenue' + 'tax ...'.
+        # Entity names ('Tushar and Sons') still bail on the REQUEST check.
+        if len(p.split()) < 2 and not _COMPOUND_REQUEST_RE.search(p):
+            return [question]
+        if _COMPOUND_UNIT_ONLY_RE.match(p):
+            return [question]
+        # A bare "by X" fragment is a modifier, not a question by itself
+        if re.match(r"^(?:by|per)\s+\w+\s*$", p, re.IGNORECASE):
+            return [question]
+        if not _COMPOUND_REQUEST_RE.search(p):
+            return [question]
+    # Inherit the first shared date phrase onto parts that lack one
+    date_phrase = ""
+    for p in parts:
+        m = _DATE_VALUE_RE.search(p)
+        if m:
+            date_phrase = m.group(0)
+            break
+    if date_phrase:
+        parts = [p if _DATE_VALUE_RE.search(p) else f"{p} {date_phrase}" for p in parts]
+    # Inherit a shared grouping modifier ("per customer group", "by branch",
+    # "category wise") onto clauses that don't carry their own — the phrase
+    # belongs to the whole compound, not just the clause it appears in.
+    dim_phrase = ""
+    for p in parts:
+        m = _DIM_PHRASE_RE.search(p)
+        if m:
+            dim_phrase = m.group(0).strip()
+            break
+    if dim_phrase:
+        parts = [
+            p if _DIM_PHRASE_RE.search(p) or _COMPOUND_ENTITY_RE.search(p)
+            else f"{p} {dim_phrase}"
+            for p in parts
+        ]
+    return parts
+
+
+def contextual_entity_inject(
+    ambiguous_value: str,
+    last_dimension: str,
+    prev_answer: str,
+    dimension_aliases: Dict[str, str],
+) -> str:
+    """Word to inject before an ambiguous entity value, resolved from the
+    previous turn's breakdown dimension.
+
+    After "top 10 designs" (dimension=designno) the follow-up "why did 440
+    perform well?" refers to design 440 — the value appears in the previous
+    answer's ranking rows, so the dimension's shortest alias ("design") is
+    injected as the entity type. Returns "" when context can't resolve it.
+    """
+    if not (ambiguous_value and last_dimension and prev_answer):
+        return ""
+    if not re.search(
+        rf"(?<![\w]){re.escape(ambiguous_value)}(?![\w])",
+        prev_answer, re.IGNORECASE,
+    ):
+        return ""
+    return next(
+        (a for a, col in dimension_aliases.items()
+         if col == last_dimension and " " not in a),
+        "",
+    )

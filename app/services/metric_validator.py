@@ -97,9 +97,7 @@ def _detect_intent_type(question: str) -> str:
     # Check weight — but "gold amount" should NOT trigger weight even though "gold" is present
     # Strip amount phrases first to avoid false positives
     q_without_amount = q
-    for kw in ("gold amount", "gold value", "gold cost", "silver amount",
-               "diamond amount", "metal amount", "labour amount",
-               "total amount", "business amount", "sales amount", "bill amount"):
+    for kw in _AMOUNT_PHRASES:
         q_without_amount = q_without_amount.replace(kw, "")
 
     if _WEIGHT_RE.search(q_without_amount):
@@ -110,6 +108,40 @@ def _detect_intent_type(question: str) -> str:
         return "amount"
 
     return "unknown"
+
+
+# Phrases whose presence suppresses a weight match (they are amount asks).
+_AMOUNT_PHRASES = (
+    "gold amount", "gold value", "gold cost", "silver amount",
+    "diamond amount", "metal amount", "labour amount",
+    "total amount", "business amount", "sales amount", "bill amount",
+)
+
+
+def _detect_intent_types(question: str) -> set:
+    """ALL intent types the question mentions.
+
+    Multi-metric questions mention several types — 'total diamond wt and pcs'
+    is weight AND count. validate_metric_intent uses this to keep a metric
+    whose type is among the mentioned intents instead of collapsing the
+    question to a single type and overriding a correct LLM pick.
+    """
+    q = " " + question.lower().strip() + " "
+    types = set()
+    if _COUNT_OF_UNIT_RE.search(q):
+        types.add("weight")
+    elif _COUNT_ENTITY_RE.search(q) or _COUNT_RE.search(q):
+        types.add("count")
+    if _RATE_RE.search(q):
+        types.add("rate")
+    q_wo_amount = q
+    for kw in _AMOUNT_PHRASES:
+        q_wo_amount = q_wo_amount.replace(kw, "")
+    if _WEIGHT_RE.search(q_wo_amount):
+        types.add("weight")
+    if _AMOUNT_RE.search(q):
+        types.add("amount")
+    return types
 
 
 def validate_metric_intent(metric: str, question: str, report_key: str = "sales_report") -> str:
@@ -126,6 +158,12 @@ def validate_metric_intent(metric: str, question: str, report_key: str = "sales_
 
     metric_meta = catalog.get(metric, {})
     metric_type = metric_meta.get("type", "amount")  # default to amount
+
+    # Multi-intent questions ('diamond wt and pcs') mention several types —
+    # the LLM's pick is valid if its type is ANY of them; the other types
+    # are served by extra_metrics, not by clobbering the primary metric.
+    if metric_type in _detect_intent_types(question):
+        return metric
 
     intent_type = _detect_intent_type(question)
 

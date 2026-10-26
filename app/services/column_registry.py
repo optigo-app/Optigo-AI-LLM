@@ -136,8 +136,16 @@ def get_dimension_headers(report_key: str = "sales_report") -> Dict[str, str]:
         sql = meta.get("sql", name)
         # `label` is the user-facing display name; `desc` is prompt/catalog
         # guidance text and may contain instructions — never show it raw.
+        # Load-time key translation maps desc -> description, so strip the
+        # ' — annotation' tail where guidance text lives ("Job number from
+        # Excel — derived as ..." -> "Job number from Excel").
         desc = meta.get("label") or meta.get("description", "")
-        if desc:
+        if desc and " — " in desc:
+            desc = desc.split(" — ")[0].strip()
+        if desc and sql not in headers:
+            # Several column keys can share one sql name (StockBarcode is
+            # also exposed as serialjobno/jobno_excel) — the first entry's
+            # label wins, a derived column must not clobber the header.
             headers[sql] = desc
         headers[name] = desc or name
     return headers
@@ -362,6 +370,39 @@ def get_computed_only_names(report_key: str = "sales_report") -> Set[str]:
     return result
 
 
+def get_insights(report_key: str) -> List[str]:
+    """Insight rules enabled for a report — config key ``insights``.
+
+    ``[]`` disables all insights for the report; absent key returns the
+    engine's default set."""
+    report_cfg = _REGISTRY.get(report_key, {})
+    if "insights" in report_cfg:
+        return list(report_cfg.get("insights") or [])
+    from app.services.insight_engine import DEFAULT_INSIGHTS
+    return list(DEFAULT_INSIGHTS)
+
+
+def get_aging(report_key: str) -> Dict[str, Any]:
+    """Aging-insight config for a report — top-level ``aging`` key.
+
+    Expected shape: ``{"metric": "<count expr column>", "dimension":
+    "<group column>", "days": <int threshold>}``. Empty dict when absent."""
+    report_cfg = _REGISTRY.get(report_key, {})
+    aging = report_cfg.get("aging")
+    return dict(aging) if isinstance(aging, dict) else {}
+
+
+def get_deadstock(report_key: str) -> Dict[str, Any]:
+    """Dead-stock-insight config — top-level ``deadstock`` key.
+
+    Expected shape: ``{"metric": "<count_distinct column>", "days": <window>,
+    "noun": "<entity>", "trigger_dimensions": [...], "trigger_words": "re"}``.
+    Empty dict when absent."""
+    report_cfg = _REGISTRY.get(report_key, {})
+    deadstock = report_cfg.get("deadstock")
+    return dict(deadstock) if isinstance(deadstock, dict) else {}
+
+
 def resolve_metric_alias(report_key: str, metric: str) -> Optional[str]:
     """Resolve an LLM-emitted metric name to a metric_catalog/column key.
 
@@ -375,6 +416,9 @@ def resolve_metric_alias(report_key: str, metric: str) -> Optional[str]:
     catalog = report_cfg.get("metric_catalog", {}) or {}
     columns = report_cfg.get("columns", {}) or {}
     needle = metric.strip().lower()
+    # Squashed form catches LLM concatenations — 'DiamondWeight' vs the
+    # 'diamond weight' alias, 'DiaPcs' vs 'dia pcs'.
+    squashed = re.sub(r"[\s._\-]+", "", needle)
 
     for key, meta in catalog.items():
         if key.lower() == needle:
@@ -383,6 +427,8 @@ def resolve_metric_alias(report_key: str, metric: str) -> Optional[str]:
             return key
         for alias in meta.get("aliases", []) or []:
             if str(alias).strip().lower() == needle:
+                return key
+            if squashed and re.sub(r"[\s._\-]+", "", str(alias).strip().lower()) == squashed:
                 return key
 
     for key, meta in columns.items():

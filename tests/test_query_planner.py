@@ -539,6 +539,23 @@ class CountVsUnitIntentTests(unittest.TestCase):
             validate_metric_intent("Amount", "how many grams of gold",
                                    "sales_report"), "grosswt")
 
+    def test_multi_intent_question_keeps_llm_metric(self):
+        """'diamond wt and pcs' is weight AND count — the LLM's dctw pick
+        must survive; pcs is served by extra_metrics, not by overriding the
+        primary to total_count (regression: 'today total diamind wt and pcs'
+        produced Bill Count + Sales instead of the diamond weight)."""
+        from app.services.metric_validator import validate_metric_intent
+        self.assertEqual(
+            validate_metric_intent("dctw", "total diamond wt and pcs today",
+                                   "sales_report"), "dctw")
+        self.assertEqual(
+            validate_metric_intent("dpcs", "total diamond wt and pcs",
+                                   "sales_report"), "dpcs")
+        # Pure single-intent override behaviour is unchanged.
+        self.assertEqual(
+            validate_metric_intent("total_count", "total diamond weight",
+                                   "sales_report"), "dctw")
+
     def test_planner_keeps_sum_for_unit_question(self):
         p = _parse("how many grams of gold", metric="grosswt")
         _apply_deterministic_override(p, "how many grams of gold")
@@ -569,6 +586,70 @@ class AliasWordBoundaryTests(unittest.TestCase):
                 metric_validator.validate_metric_intent(
                     "Amount", "how many items without", "sales_report"),
                 "total_count")
+
+
+class DiamondOwnerMetricTests(unittest.TestCase):
+    """'Comp. Dia. Ctw' / 'Cust. Dia. PCS' are metric names, not dimension
+    breakdowns. They must map to Co_DiaWt/Cu_DiaPCS and drop any LLM-injected
+    Manufacturer dimension."""
+
+    def test_company_diamond_ctw_scalar(self):
+        p = _parse("Comp. Dia. Ctw")
+        _apply_deterministic_override(p, "Comp. Dia. Ctw")
+        self.assertEqual(p.metric, "Co_DiaWt")
+        self.assertIsNone(p.dimension)
+
+    def test_customer_diamond_pcs_scalar(self):
+        p = _parse("Cust. Dia. PCS")
+        _apply_deterministic_override(p, "Cust. Dia. PCS")
+        self.assertEqual(p.metric, "Cu_DiaPCS")
+        self.assertIsNone(p.dimension)
+
+    def test_company_wise_diamond_wt_scalar(self):
+        # Common speech inserts "wise" between company and diamond — still
+        # the company-supplied diamond metric, not a supplier breakdown.
+        p = _parse("company wise diamond wt")
+        p.dimension = "Manufacturer"  # simulate LLM mistake
+        _apply_deterministic_override(p, "company wise diamond wt")
+        self.assertEqual(p.metric, "Co_DiaWt")
+        self.assertIsNone(p.dimension)
+
+    def test_customer_wise_diamond_pcs_scalar(self):
+        p = _parse("customer wise diamond pcs")
+        p.dimension = "CustomerFullName"
+        _apply_deterministic_override(p, "customer wise diamond pcs")
+        self.assertEqual(p.metric, "Cu_DiaPCS")
+        self.assertIsNone(p.dimension)
+
+
+class DimensionSemanticsTests(unittest.TestCase):
+    """'company wise' must not silently become 'supplier wise' — LLMs pick
+    Manufacturer because supplier names look like company names."""
+
+    def _dim(self, question, dimension="Manufacturer"):
+        p = _parse(question)
+        p.dimension = dimension
+        _apply_deterministic_override(p, question)
+        return p.dimension
+
+    def test_company_retargets_manufacturer_to_customer(self):
+        self.assertEqual(
+            self._dim("company wise sales"), "CustomerFullName")
+
+    def test_firm_retargets_manufacturer(self):
+        self.assertEqual(
+            self._dim("firm wise sales"), "CustomerFullName")
+
+    def test_supplier_word_keeps_manufacturer(self):
+        self.assertEqual(
+            self._dim("supplier wise diamond wt"), "Manufacturer")
+        self.assertEqual(
+            self._dim("manufacturer wise diamond"), "Manufacturer")
+
+    def test_non_supplier_dimension_untouched(self):
+        self.assertEqual(
+            self._dim("customer wise sales", "CustomerFullName"),
+            "CustomerFullName")
 
 
 class DatePredicateStripTests(unittest.TestCase):

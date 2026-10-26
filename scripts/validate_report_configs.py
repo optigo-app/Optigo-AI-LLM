@@ -24,7 +24,8 @@ OPTIONAL_TOP_LEVEL_KEYS = {
     "report_keywords", "prompt_rules", "location_aliases", "party_type_rules",
     "chat_enabled", "fallback_intent", "name_filter_map", "date_column",
     "suggested_questions", "table_filters", "source_query_file",
-    "filter_invalid_values", "dimension_aliases", "masters",
+    "filter_invalid_values", "dimension_aliases", "masters", "insights",
+    "aging", "deadstock",
 }
 OPTIONAL_COLUMN_KEYS = {
     "sql", "type", "desc", "description", "grp", "business_group",
@@ -118,6 +119,32 @@ def _check_types(report_key: str, cfg: Dict[str, Any]) -> Tuple[List[str], List[
                 errors.append(f"'table_filters' entry for '{table}' must be a non-empty string")
             elif any(token in expression for token in (";", "--", "/*", "*/")) or _BLOCKED_EXPR_KEYWORDS.search(expression):
                 errors.append(f"'table_filters' entry for '{table}' contains blocked SQL tokens")
+
+    aging = cfg.get("aging")
+    if aging is not None:
+        if not isinstance(aging, dict):
+            errors.append("'aging' should be a dict with metric/dimension/days")
+        else:
+            aging_metric = aging.get("metric")
+            if aging_metric and aging_metric not in cfg.get("columns", {}) and aging_metric not in cfg.get("special_metrics", {}):
+                errors.append(f"'aging.metric' references unknown column '{aging_metric}'")
+            aging_dim = aging.get("dimension")
+            if aging_dim and aging_dim not in cfg.get("columns", {}):
+                errors.append(f"'aging.dimension' references unknown column '{aging_dim}'")
+            if not isinstance(aging.get("days", 7), int):
+                errors.append("'aging.days' should be int")
+
+    deadstock = cfg.get("deadstock")
+    if deadstock is not None:
+        if not isinstance(deadstock, dict):
+            errors.append("'deadstock' should be a dict with metric/days/noun")
+        else:
+            ds_metric = deadstock.get("metric")
+            known = set(cfg.get("columns", {})) | set(cfg.get("special_metrics", {}))
+            if ds_metric and ds_metric not in known:
+                errors.append(f"'deadstock.metric' references unknown column '{ds_metric}'")
+            if not isinstance(deadstock.get("days", 90), int):
+                errors.append("'deadstock.days' should be int")
     return errors, warnings
 
 

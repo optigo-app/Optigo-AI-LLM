@@ -4,10 +4,11 @@ One pipeline (run_chat) produces a ChatResponse; the streaming endpoint
 translates the same result into SSE events, so the two paths can never drift.
 """
 
+import asyncio
 import json as _json
 import re
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -29,8 +30,9 @@ from app.services.answer_generator import generate_answer, _resolve_metric, _rec
 from app.services.api_client import ReportApiError, call_report_api, export_report_api
 from app.services.classifier import get_greeting_response, keyword_classify
 from app.services.context_resolver import (
-    ambiguous_entity_value, is_probable_person_name, looks_like_followup,
-    needs_date_clarification, resolve_context,
+    ambiguous_entity_value, contextual_entity_inject, is_probable_person_name,
+    looks_like_followup, needs_date_clarification, resolve_context,
+    split_compound_question,
 )
 from app.services.real_api_client import RealApiError
 from app.services.spelling import normalize_hinglish, normalize_spelling
@@ -225,6 +227,92 @@ async def run_chat(
             session_id=session_id,
         )
 
+    # ── Compound questions: "highest selling category and most valuable
+    #    sold tag" asks two independent things. Run each clause through the
+    #    full governed pipeline and merge the blocks, rather than silently
+    #    answering only one half. Exports stay single-request.
+    compound_parts = [] if body.export else split_compound_question(body.question)
+    if len(compound_parts) > 1:
+        logger.info(
+            "Compound question split: session=%s parts=%s", session_id, compound_parts
+        )
+        merged_blocks: List[Dict[str, Any]] = []
+        merged_texts: List[str] = []
+        merged_suggestions: List[str] = []
+        _seen_blocks: set = set()
+        any_clarify = False
+        merged_period = None
+        merged_report = None
+        from app.services.context_resolver import _DATE_VALUE_RE, _clause_report_keys
+        # The splitter scored each clause against report keywords — when every
+        # clause resolves to a DISTINCT report, pin it so inside-clause keyword
+        # noise ("orders ... per department" matching wip's 'department' words)
+        # can't pull the clause onto the wrong report.
+        clause_reports = _clause_report_keys(compound_parts)
+        pin_reports = (
+            len(set(clause_reports)) == len(compound_parts)
+            and all(clause_reports)
+        )
+        for i, part in enumerate(compound_parts):
+            clause_report = clause_reports[i] if pin_reports else ""
+            sub_body = body.model_copy(update={
+                "question": part,
+                **({"report_name": clause_report} if clause_report else {}),
+            })
+            sub = await run_chat(sub_body, request, registry, cache)
+            # Section title only when the sub-answer has no heading of its
+            # own — 'Revenue by Category' already labels its section, an
+            # extra clause echo reads as a duplicate heading.
+            if not any(b.get("type") == "heading" for b in sub.blocks or []):
+                title = _DATE_VALUE_RE.sub("", part)
+                title = re.sub(
+                    r"^\s*(?:in|for|on|during|of)\s+|\s+(?:in|for|on|during)\s*$",
+                    "", title, flags=re.IGNORECASE,
+                ).strip(" ,;?.!")
+                title = (title[:1].upper() + title[1:]) if title else part
+                merged_blocks.append({"type": "heading", "content": title})
+            for b in sub.blocks or []:
+                # One shared suggestions chip-row at the end, not per section
+                if b.get("type") == "suggestions":
+                    for s in b.get("items", []) or []:
+                        if s not in merged_suggestions:
+                            merged_suggestions.append(s)
+                    continue
+                key = _json.dumps(b, sort_keys=True, default=str)
+                if key not in _seen_blocks:
+                    _seen_blocks.add(key)
+                    merged_blocks.append(b)
+            if sub.answer_text:
+                merged_texts.append(sub.answer_text)
+            if sub.status == "clarify" or sub.error:
+                any_clarify = True
+            merged_period = merged_period or sub.period
+            merged_report = merged_report or sub.report
+            for s in getattr(getattr(sub, "actions", None), "suggestions", None) or []:
+                if s not in merged_suggestions:
+                    merged_suggestions.append(s)
+        # Cross-report tables that group by the same dimension merge into
+        # one multi-metric table ("Revenue and Total tax by Customer group")
+        # — that is what the question actually asked for.
+        from app.services.block_builder import merge_same_dimension_tables
+        merged_blocks = merge_same_dimension_tables(merged_blocks)
+        if merged_suggestions:
+            merged_blocks.append(
+                {"type": "suggestions", "items": merged_suggestions[:4]}
+            )
+        answer_text = "\n\n".join(merged_texts)
+        return ChatResponse(
+            status="clarify" if any_clarify else "success",
+            report=merged_report,
+            question=body.question,
+            answer=AnswerData(type="text", value=answer_text),
+            period=merged_period,
+            blocks=merged_blocks or None,
+            answer_text=answer_text,
+            actions=Actions(suggestions=merged_suggestions) if merged_suggestions else None,
+            session_id=session_id,
+        )
+
     if needs_date_clarification(body.question):
         msg = "Which date range would you like? For example: today, this month, last month, this year, or specific start and end dates."
         blocks = [block_builder.build_date_range_input_block(msg)] if response_mode == "wide" else None
@@ -245,7 +333,57 @@ async def run_chat(
 
     ambiguous_value = ambiguous_entity_value(body.question)
     if ambiguous_value:
-        if is_probable_person_name(ambiguous_value):
+        # Contextual resolution first: after a "top 10 designs" breakdown,
+        # "why did 440 perform well?" refers to design 440 — the value
+        # appears in the previous answer's ranking rows. Standalone values
+        # still get the generic entity-choice clarify below.
+        _ctx_inject = ""
+        last_intent = conversation_store.get_last_intent(session_id)
+        last_dim = (last_intent.get("dimension") or "").strip()
+        if last_dim:
+            prev_msgs = [
+                m for m in conversation_store.get_messages(session_id, limit=10)
+                if m.get("role") == "assistant"
+            ]
+            prev_answer = prev_msgs[-1].get("content", "") if prev_msgs else ""
+            from app.services.column_registry import get_dimension_aliases
+            _alias_report = last_intent.get("report_key") or resolved_report_name or ""
+            _ctx_inject = contextual_entity_inject(
+                ambiguous_value, last_dim, prev_answer,
+                get_dimension_aliases(_alias_report) if _alias_report else {},
+            )
+        if not _ctx_inject:
+            # Value came from a ranking shown a few turns back (the last turn
+            # may have pivoted to another dimension). Look it up in the
+            # session's entity index and inject that dimension's alias.
+            _idx_hit = conversation_store.lookup_entity_dimension(
+                session_id, ambiguous_value
+            )
+            _idx_dim = (_idx_hit.get("dimension") or "").strip()
+            if _idx_dim:
+                from app.services.column_registry import get_dimension_aliases
+                _idx_report = _idx_hit.get("report_key") or resolved_report_name or ""
+                _ctx_inject = next(
+                    (a for a, col in (get_dimension_aliases(_idx_report) or {}).items()
+                     if col == _idx_dim and " " not in a),
+                    "",
+                )
+                if _ctx_inject:
+                    logger.info(
+                        "Ambiguous entity '%s' resolved as '%s' via session entity index (%s)",
+                        ambiguous_value, _ctx_inject, _idx_dim,
+                    )
+        if _ctx_inject:
+            logger.info(
+                "Ambiguous entity '%s' resolved as '%s' via prior %s breakdown",
+                ambiguous_value, _ctx_inject, last_dim,
+            )
+            body.question = re.sub(
+                re.escape(ambiguous_value),
+                f"{_ctx_inject} {ambiguous_value}",
+                body.question, count=1, flags=re.IGNORECASE,
+            )
+        elif is_probable_person_name(ambiguous_value):
             # Person-like names almost always mean a customer — apply the
             # customer filter directly instead of a clarification round-trip.
             body.question = re.sub(
@@ -381,6 +519,43 @@ async def run_chat(
     except ValueError as exc:
         tracer.end("semantic_parse", outcome="error", detail=str(exc))
         logger.warning("Query planning failed: %s", exc)
+        # "Invalid dimension 'X' for <report>" / "Unknown extra metrics for
+        # <report>" are valid questions pointed at a report that can't serve
+        # them — say what IS available instead of a dead-end error.
+        _dim_m = re.search(r"Invalid dimension '([^']+)' for (\S+)", str(exc))
+        _extra_m = re.search(r"Unknown extra metrics for (\S+): (.+)", str(exc))
+        if _dim_m or _extra_m:
+            _err_report = (_dim_m or _extra_m).group(1)
+            if _dim_m:
+                bad, _rcfg2 = _dim_m.group(1), {}
+                try:
+                    from app.services.semantic_query_parser import _build_dimension_catalog
+                    from app.services.column_registry import _load_registry as _load_col_reg
+                    _rcfg2 = _load_col_reg().get(_err_report, {})
+                    _dims = _build_dimension_catalog(_err_report, _rcfg2)
+                    _skip = ("image", "identifier", "internal code", "caching", "random")
+                    _avail = [d.get("label") or d["name"] for d in _dims
+                              if not any(s in (d.get("label") or d["name"]).lower()
+                                         for s in _skip)][:10]
+                except Exception:
+                    _avail = []
+                clarify_msg = (
+                    f"This report doesn't have a '{bad}' breakdown."
+                    + (f" You can group by: {', '.join(_avail)}." if _avail else "")
+                )
+            else:
+                clarify_msg = (
+                    f"This report can't compute: {_extra_m.group(2)}. "
+                    "Try asking for that metric separately."
+                )
+            blocks = ([{"type": "clarify", "content": clarify_msg}]
+                      if response_mode == "wide" else None)
+            return ChatResponse(
+                status="clarify", error=clarify_msg,
+                answer=AnswerData(type="text", value=clarify_msg),
+                answer_text=clarify_msg,
+                session_id=session_id, blocks=blocks,
+            )
         msg = "I couldn't safely validate that query. Please specify the report and metric."
         return ChatResponse(error=msg, session_id=session_id)
     parsed = planning.parsed
@@ -467,6 +642,14 @@ async def run_chat(
     )
 
     # ── Handle clarification: LLM detected query is too broad ──
+    # Exception: a clarify that only asks for a date/period the deterministic
+    # extractor already resolved ('last quarter' -> explicit start/end) is a
+    # false positive — trust the resolved filter over the clarify text.
+    if parsed.clarify and parsed.date_filter and re.search(
+        r"\b(date|range|period|quarter|month|year|week|when)\b",
+        parsed.clarify, re.IGNORECASE,
+    ):
+        parsed.clarify = ""
     if parsed.clarify:
         clarify_msg = parsed.clarify
         # Store in conversation history so follow-up questions have context
@@ -510,14 +693,23 @@ async def run_chat(
     # filter extraction on a frontend-selected report is still a wrong answer.
     # Keep a lower floor (0.5) for that path so borderline parses don't spam
     # clarifications when the user already scoped the report.
+    # The floor uses the raw model score — a genuinely confused parse on a
+    # pinned report is still a wrong answer. EXCEPTION: when a deterministic
+    # intent pattern matched, confidence was boosted to >=0.9 — that match is
+    # real evidence the question maps cleanly ('total sales' -> total_sales),
+    # and must not be invisible to the gate.
     _model_conf = getattr(parsed, "model_confidence", query_plan.confidence)
+    if query_plan.confidence >= 0.9:
+        _model_conf = max(_model_conf, 0.95)
     # On a pinned report an informative parse (the model made real choices —
-    # dimension/filters/ai_where, including rescued ones) is a valid plan even
-    # when the model under-reports confidence; the floor only guards empty,
-    # guessy parses.
+    # dimension/filters/ai_where/date, including rescued ones) is a valid plan
+    # even when the model under-reports confidence; the floor only guards
+    # empty, guessy parses. A plain 'this month total sales' (default metric +
+    # date filter) is a complete scalar ask, not an empty parse.
     _pinned_informative = bool(
         resolved_report_name
         and (parsed.dimension or parsed.filters or parsed.ai_where
+             or parsed.date_filter
              or (parsed.metric and parsed.metric != "Amount"))
     )
     _low_conf = (_model_conf < 0.50 and not _pinned_informative) if resolved_report_name else (query_plan.confidence < 0.75)
@@ -644,6 +836,20 @@ async def run_chat(
         total_count = int(data.get("total_count", returned_count) or returned_count)
         query_plan.results_limited = query_plan.results_limited or total_count > returned_count
 
+    # Remember which entity values this ranking showed — a later 'why did 440
+    # perform well?' can resolve the bare value even after the user pivots to
+    # a different dimension in between.
+    if parsed.dimension and isinstance(data, dict):
+        _dim_values = [
+            str(r.get("DimensionValue") or "").strip()
+            for r in (data.get("rows") or [])
+            if isinstance(r, dict) and r.get("DimensionValue") is not None
+        ]
+        if _dim_values:
+            conversation_store.record_entities(
+                session_id, report_key, parsed.dimension, _dim_values[:50]
+            )
+
     # 7. Large-result handling -- handled by the answer generator (caps rows sent to the LLM).
     # 8. Answer generation via deterministic pipeline
     answer_start = time.time()
@@ -688,6 +894,287 @@ async def run_chat(
         else []
     )
 
+    # ── Auto-insights: companion fetches (run in parallel) ─────────────────
+    # period_delta, aging, and deadstock are independent governed calls on the
+    # same filters — they used to run as serial SP round-trips (1-6s of pure
+    # latency on qualifying questions); gather them so the stage costs
+    # max(companion) instead of sum(companions).
+    from app.services.column_registry import get_insights, get_aging
+    from app.services import insight_engine
+    insight_enabled = get_insights(report_key)
+    from app.services.query_planner import _WHY_RE, _WHY_PERF_RE
+    _why_q = bool(_WHY_RE.search(body.question or "") and _WHY_PERF_RE.search(body.question or ""))
+    aging_cfg: Dict[str, Any] = {}
+    deadstock_cfg: Dict[str, Any] = {}
+
+    async def _fetch_period_delta() -> Tuple[Optional[float], str]:
+        """Twin governed query on the previous period so scalar answers can
+        say '↑ 34% vs last month'. Report config `insights` gates it."""
+        if not (
+            "period_delta" in insight_enabled
+            and not _is_growth_query
+            and len(_period_mentions) < 2
+            and not parsed.dimension
+            and not parsed.extra_metrics
+            and validated_filters.get("start_date")
+            and validated_filters.get("end_date")
+        ):
+            return None, ""
+        try:
+            from app.services.orchestrator import compute_previous_period
+            prev = compute_previous_period(validated_filters, parsed.date_filter)
+            if not prev:
+                return None, ""
+            prev_filters, cur_start, cur_end = prev
+            preset = (parsed.date_filter or {}).get("preset", "")
+            prior_label_hint = ""
+            # Partial-period honesty: 'this month' mid-month must compare
+            # the same elapsed span of last month (Oct 1-7 -> Sep 1-7),
+            # not the full month — otherwise every mid-period delta is a
+            # meaningless huge drop.
+            if preset in ("this_month", "this_year", "this_week"):
+                from datetime import date as _d
+                _cs, _ce = _d.fromisoformat(cur_start), _d.fromisoformat(cur_end)
+                _today = _d.today()
+                if _ce >= _today and _cs.day == 1:
+                    _ps = _d.fromisoformat(prev_filters["start_date"])
+                    _pe = _ps + (_ce - _cs)
+                    prev_filters["end_date"] = _pe.isoformat()
+                    if preset == "this_month":
+                        prior_label_hint = "same span last month"
+                    elif preset == "this_year":
+                        prior_label_hint = "same span last year"
+                    else:
+                        prior_label_hint = "last week"
+            from dataclasses import replace as _dc_replace
+            delta_spec = _dc_replace(intent_spec, dimension="")
+            step_filters = dict(validated_filters)
+            step_filters["start_date"] = prev_filters["start_date"]
+            step_filters["end_date"] = prev_filters["end_date"]
+            if settings.use_real_api:
+                from app.services.real_api_client import call_real_report_api as _call_real
+                pdata = await _call_real(
+                    report_key=report_key, intent_spec=delta_spec,
+                    validated_filters=step_filters, appuserid=appuserid,
+                    ip_address=ip_address, yearcode=yearcode,
+                    sp_number=sp_number, ai_where_clause=ai_where,
+                )
+            else:
+                pdata = await call_report_api(
+                    report_key, step_filters, company_code, user_id, registry,
+                )
+            return (
+                _resolve_metric(pdata, delta_spec, body.question).value,
+                prior_label_hint or insight_engine.delta_label_for_preset(preset),
+            )
+        except Exception as exc:
+            logger.warning("period-delta companion failed: %s", exc)
+            return None, ""
+
+    async def _fetch_aging() -> Optional[dict]:
+        """Same governed call, metric swapped to the report's aging metric
+        grouped by the aging dimension. Skipped when the question is itself
+        about aging (the answer already IS the aged count)."""
+        nonlocal aging_cfg
+        if not (
+            "aging" in insight_enabled
+            and not _is_growth_query
+            and not _why_q
+            and len(_period_mentions) < 2
+            and not re.search(r"\b(aging|aged|stuck|overdue|old jobs?|past eta|past promise|delayed)\b", _q_lower)
+        ):
+            return None
+        aging_cfg = get_aging(report_key)
+        aging_metric = aging_cfg.get("metric")
+        if not (aging_metric and parsed.metric != aging_metric):
+            return None
+        try:
+            from dataclasses import replace as _dc_replace
+            aging_spec = _dc_replace(
+                intent_spec,
+                metric_key=aging_metric,
+                aggregation="sum",
+                dimension=aging_cfg.get("dimension", ""),
+                sort="desc",
+                limit=50,
+                is_field_metric=False,
+            )
+            if settings.use_real_api:
+                from app.services.real_api_client import call_real_report_api as _call_real_aging
+                return await _call_real_aging(
+                    report_key=report_key, intent_spec=aging_spec,
+                    validated_filters=validated_filters, appuserid=appuserid,
+                    ip_address=ip_address, yearcode=yearcode,
+                    sp_number=sp_number, ai_where_clause=ai_where,
+                )
+            return await call_report_api(
+                report_key, validated_filters, company_code, user_id, registry,
+            )
+        except Exception as exc:
+            logger.warning("aging companion failed: %s", exc)
+            return None
+
+    async def _fetch_deadstock() -> Tuple[Optional[float], Optional[float]]:
+        """Two scalar governed calls — unique entities all-time vs the same
+        count inside the last N days — only for questions already about that
+        entity (trigger_dimensions/trigger_words gate it)."""
+        nonlocal deadstock_cfg
+        if not (
+            "deadstock" in insight_enabled
+            and not _is_growth_query
+            and not _why_q
+            and len(_period_mentions) < 2
+        ):
+            return None, None
+        from app.services.column_registry import get_deadstock
+        deadstock_cfg = get_deadstock(report_key)
+        ds_metric = deadstock_cfg.get("metric")
+        ds_triggers = deadstock_cfg.get("trigger_dimensions") or []
+        ds_words = deadstock_cfg.get("trigger_words") or ""
+        ds_triggered = bool(
+            parsed.dimension in ds_triggers
+            or (ds_words and re.search(ds_words, _q_lower))
+        )
+        if not (ds_metric and ds_triggered and parsed.metric != ds_metric):
+            return None, None
+        try:
+            from dataclasses import replace as _dc_replace
+            from datetime import date as _dd, timedelta as _tdd
+            ds_spec = _dc_replace(
+                intent_spec,
+                metric_key=ds_metric,
+                aggregation="count_distinct",
+                dimension="",
+                sort="desc",
+                limit=1,
+                is_field_metric=False,
+            )
+            _today = _dd.today()
+            ds_days = int(deadstock_cfg.get("days", 90))
+            recent_filters = dict(validated_filters)
+            recent_filters["start_date"] = (_today - _tdd(days=ds_days)).isoformat()
+            recent_filters["end_date"] = _today.isoformat()
+            ever_filters = {k: v for k, v in validated_filters.items()
+                            if k not in ("start_date", "end_date")}
+
+            async def _ds_call(filters: Dict[str, Any]) -> Any:
+                if settings.use_real_api:
+                    return await call_real_report_api(
+                        report_key=report_key, intent_spec=ds_spec,
+                        validated_filters=filters, appuserid=appuserid,
+                        ip_address=ip_address, yearcode=yearcode,
+                        sp_number=sp_number, ai_where_clause=ai_where,
+                    )
+                return await call_report_api(
+                    report_key, filters, company_code, user_id, registry,
+                )
+
+            ds_recent_data, ds_ever_data = await asyncio.gather(
+                _ds_call(recent_filters), _ds_call(ever_filters),
+            )
+            return (
+                _resolve_metric(ds_recent_data, ds_spec, body.question).value,
+                _resolve_metric(ds_ever_data, ds_spec, body.question).value,
+            )
+        except Exception as exc:
+            logger.warning("deadstock companion failed: %s", exc)
+            return None, None
+
+    tracer.start("companions")
+    (prior_scalar, prior_label), aging_data, (deadstock_recent, deadstock_ever) = (
+        await asyncio.gather(_fetch_period_delta(), _fetch_aging(), _fetch_deadstock())
+    )
+    tracer.end("companions")
+
+    # Precompute deterministic insight lines once — companions above already
+    # fetched any extra data needed, and every answer path (standard,
+    # multi-metric) appends them in its own render style.
+    insight_lines: List[str] = []
+    insight_severity: List[str] = []
+    try:
+        _ins_enabled = [e for e in insight_enabled if not _why_q or e == "period_delta"]
+        _cur_scalar = None
+        if not getattr(intent_spec, "dimension", ""):
+            # Scalar SP results also arrive as rows=[{MetricValue}] with no
+            # DimensionValue — resolve the value explicitly.
+            _cur_scalar = _resolve_metric(data, intent_spec, body.question).value
+        _aging_scope = None
+        if aging_data is not None:
+            # Share-of-scope is only meaningful when the answering metric
+            # counts the same grain as the aging metric (job counts).
+            from app.services.column_registry import _REGISTRY as _CREG
+            _cat = (_CREG.get(report_key, {}).get("metric_catalog") or {}).get(
+                getattr(intent_spec, "metric_key", ""), {})
+            if str(_cat.get("type", "")).lower() == "count" or getattr(intent_spec, "aggregation", "") == "count":
+                _aging_scope = _cur_scalar
+                if _aging_scope is None and isinstance(data, dict):
+                    # rd1 TotalCount is the untruncated row count — a sum of
+                    # returned rows undercounts when the breakdown hits limit.
+                    _aging_scope = data.get("total_count") or None
+        insight_lines = insight_engine.build_insights(
+            data, intent_spec, enabled=_ins_enabled,
+            prior_value=prior_scalar, prior_label=prior_label,
+            current_value=_cur_scalar,
+            aging_data=aging_data,
+            aging_days=int(aging_cfg.get("days", 7)),
+            aging_dim_label=aging_cfg.get("dimension_label", aging_cfg.get("dimension", "department")),
+            aging_scope_total=_aging_scope,
+            aging_phrase=aging_cfg.get("phrase", ""),
+            aging_noun=aging_cfg.get("noun", "job"),
+            deadstock_ever=deadstock_ever,
+            deadstock_recent=deadstock_recent,
+            deadstock_days=int(deadstock_cfg.get("days", 90)),
+            deadstock_noun=deadstock_cfg.get("noun", "design"),
+            severity_out=insight_severity,
+        )
+    except Exception as exc:
+        logger.warning("insight computation failed: %s", exc)
+
+    # Follow-up chips: deterministic 'next questions' derived from the answer
+    # shape — breakdown → deeper cut / period compare, scalar → compare /
+    # breakdown. Strings only; clicking sends them as the next question.
+    try:
+        _sugs: List[str] = []
+        from app.services.column_registry import _REGISTRY as _CREG_S
+        _rep_cols = (_CREG_S.get(report_key, {}) or {}).get("columns", {}) or {}
+        _dd_key = (_CREG_S.get(report_key, {}) or {}).get("default_dimension", "") or ""
+        # Column `desc` is LLM-prompt text (not display copy) — use `label`,
+        # else prettify the key: "CustomerFullName" -> "customer full name".
+        def _pretty_key(key: str) -> str:
+            return re.sub(r"(?<![_ ])(?=[A-Z])", " ", key).replace("_", " ").strip().lower()
+
+        from app.services.column_registry import get_dimension_aliases as _get_dims
+
+        def _dim_noun(dim_key: str) -> str:
+            # Suggestion copy needs a natural noun — 'customers', not 'customer
+            # full names'. Prefer a one-word alias that round-trips through
+            # dimension_aliases; fall back to the column label.
+            aliases = [a for a, c in _get_dims(report_key).items() if c == dim_key]
+            if not aliases:
+                return (_rep_cols.get(dim_key) or {}).get("label") or _pretty_key(dim_key)
+            singles = [a for a in aliases if " " not in a]
+            return singles[0] if singles else min(aliases, key=len)
+
+        _dd_label = _dim_noun(_dd_key)
+        _dim_label = ""
+        if getattr(intent_spec, "dimension", ""):
+            _dim_label = _dim_noun(intent_spec.dimension)
+        _entity_hint = ""
+        if getattr(intent_spec, "dimension", "") and isinstance(data, dict):
+            _rows = data.get("rows") or []
+            if _rows:
+                _entity_hint = str(_rows[0].get("DimensionValue") or "")
+        _sugs = insight_engine.followup_suggestions(
+            body.question, dimension_label=_dim_label,
+            has_date=bool(validated_filters.get("start_date")),
+            default_dimension_label=_dd_label,
+            entity_hint=_entity_hint,
+            limit=int(getattr(intent_spec, "limit", 0) or 0),
+        )
+    except Exception as exc:
+        logger.warning("follow-up suggestion build failed: %s", exc)
+        _sugs = []
+
     # ── Multi-metric support: fetch extra metrics via additional SP calls ──
     if parsed.extra_metrics and not parsed.dimension and len(_period_mentions) < 2:
         from app.services.semantic_query_parser import get_metric_unit, get_metric_unit_label
@@ -707,7 +1194,22 @@ async def run_chat(
 
         from app.services.orchestrator import execute_plan
         from app.services.query_plan import QueryStep
-        query_plan.steps = [QueryStep(type="metric_fetch", metric=metric) for metric in parsed.extra_metrics]
+        from app.services.column_registry import resolve_metric_alias
+        # Dedupe extras — the LLM sometimes repeats the primary metric as an
+        # extra ('today' -> Gross Wt | Gross Wt in the table). Compare
+        # canonical catalog keys: 'grosswt' vs 'GrossWt' is the same metric.
+        _primary_key = (resolve_metric_alias(report_key, parsed.metric)
+                        or parsed.metric or "").strip().lower()
+        _extra_seen = {_primary_key}
+        _extras = []
+        for _m in parsed.extra_metrics:
+            _canon = resolve_metric_alias(report_key, _m) or _m
+            _k = str(_canon).strip().lower()
+            if _k in _extra_seen:
+                continue
+            _extra_seen.add(_k)
+            _extras.append(_canon)
+        query_plan.steps = [QueryStep(type="metric_fetch", metric=metric) for metric in _extras]
 
         async def _fetch_metric_step(step):
             extra_spec = parsed.to_intent_spec()
@@ -719,7 +1221,7 @@ async def run_chat(
             from app.services.column_registry import _REGISTRY as _CREG
             cat = (_CREG.get(report_key, {}).get("metric_catalog") or {}).get(step.metric, {})
             extra_spec.aggregation = "count" if str(cat.get("type", "")).lower() == "count" else "sum"
-            extra_spec.unit = get_metric_unit(step.metric)
+            extra_spec.unit = get_metric_unit(step.metric, report_key)
             extra_spec.unit_label = get_metric_unit_label(step.metric, report_key)
             if settings.use_real_api:
                 extra_data = await call_real_report_api(
@@ -744,7 +1246,7 @@ async def run_chat(
                 logger.warning("Failed to fetch extra metric %s: %s", outcome.step.metric, outcome.error)
                 metric_results.append({
                     "metric_key": outcome.step.metric, "value": None,
-                    "unit": get_metric_unit(outcome.step.metric),
+                    "unit": get_metric_unit(outcome.step.metric, report_key),
                     "unit_label": get_metric_unit_label(outcome.step.metric, report_key),
                     "label": outcome.step.metric,
                 })
@@ -779,6 +1281,18 @@ async def run_chat(
             answer_text = "\n".join(lines)
             blocks = None
 
+        if insight_lines:
+            if blocks is not None:
+                _ib = {"type": "list", "title": "Insights", "items": insight_lines}
+                if insight_severity:
+                    _ib["severity"] = insight_severity
+                blocks = blocks + [_ib]
+            elif answer_text:
+                answer_text = (answer_text + "\n\nInsights:\n"
+                               + "\n".join(f"- {i}" for i in insight_lines))
+        if _sugs and blocks is not None:
+            blocks = blocks + [{"type": "suggestions", "items": _sugs}]
+
         response = ChatResponse(
             report_key=report_key,
             answer=AnswerData(type="text", value=answer_text or ""),
@@ -794,7 +1308,7 @@ async def run_chat(
         )
 
         # Cache the multi-metric response
-        if cache is not None and not body.export:
+        if cache is not None and response.status == "success" and not body.export:
             await cache.store(
                 resolved_question, company_code, user_id, response, response_mode,
                 report_key=report_key,
@@ -933,7 +1447,7 @@ async def run_chat(
                         complexity=query_plan.complexity.value, results_limited=query_plan.results_limited,
                     ),
                 )
-                if cache is not None and not body.export:
+                if cache is not None and response.status == "success" and not body.export:
                     await cache.store(
                         resolved_question, company_code, user_id, response, response_mode,
                         report_key=report_key,
@@ -1035,7 +1549,7 @@ async def run_chat(
                             complexity=query_plan.complexity.value, results_limited=query_plan.results_limited,
                         ),
                     )
-                    if cache is not None and not body.export:
+                    if cache is not None and response.status == "success" and not body.export:
                         await cache.store(
                             resolved_question, company_code, user_id, response, response_mode,
                             report_key=report_key,
@@ -1074,6 +1588,7 @@ async def run_chat(
             history=history,
             intent_spec=intent_spec,
             response_mode=response_mode,
+            date_was_explicit=date_was_explicit,
         )
         tracer.end("answer")
     except Exception as exc:
@@ -1136,6 +1651,44 @@ async def run_chat(
             blocks = blocks + [{"type": "assumption",
                                 "content": "Some filters in your question couldn't be applied — results shown are unfiltered."}]
 
+    # Auto-insights: deterministic facts derived from the verified result set
+    # (pareto share, vs-average, outlier) plus the period-delta/aging
+    # companions when they ran — lines were precomputed once after the
+    # companion fetches so every answer path can append them identically.
+    if insight_lines:
+        if blocks is not None:
+            # A period delta belongs ON the metric card as a colored badge,
+            # not in the bullet list — attach structured fields and drop the
+            # text line when a card exists to carry it.
+            _card = next((b for b in blocks if b.get("type") == "metric_card"), None)
+            if _card is not None and prior_scalar is not None:
+                _unit = getattr(intent_spec, "unit", "") or ""
+                _ulabel = getattr(intent_spec, "unit_label", "") or ""
+                _mlabel = (getattr(intent_spec, "label", "")
+                           or getattr(intent_spec, "metric_key", "") or "Value")
+                _dparts = insight_engine.period_delta_parts(
+                    _cur_scalar, prior_scalar, prior_label, _unit, _ulabel)
+                _dline = insight_engine.period_delta_line(
+                    _cur_scalar, prior_scalar, prior_label, _mlabel, _unit, _ulabel)
+                if _dparts:
+                    _card.update({"delta": _dparts["delta"], "trend": _dparts["trend"],
+                                  "comparison": _dparts["comparison"]})
+                    if _dline in insight_lines:
+                        _idx = insight_lines.index(_dline)
+                        insight_lines.pop(_idx)
+                        if _idx < len(insight_severity):
+                            insight_severity.pop(_idx)
+            if insight_lines:
+                _ib = {"type": "list", "title": "Insights", "items": insight_lines}
+                if insight_severity:
+                    _ib["severity"] = insight_severity
+                blocks = blocks + [_ib]
+        elif answer_text:
+            answer_text = (answer_text + "\n\nInsights:\n"
+                           + "\n".join(f"- {i}" for i in insight_lines))
+    if _sugs and blocks is not None:
+        blocks = blocks + [{"type": "suggestions", "items": _sugs}]
+
     # Market-context note: honest boundary between external market info and
     # internal ERP facts. External claims (when a curated snapshot exists) are
     # always attributed with source + retrieval date.
@@ -1155,6 +1708,16 @@ async def run_chat(
             ],
         }
         blocks = (blocks or []) + [market_block]
+
+    # A date_range_input block in the response implies a pending date choice —
+    # register it so the picker's submit_action (set_date_range) resolves
+    # instead of expiring on the missing pending state.
+    if blocks and any(b.get("type") == "date_range_input" for b in blocks):
+        conversation_store.set_pending(session_id, {
+            "kind": "date_range",
+            "question": resolved_question or body.question,
+            "report_key": report_key or "",
+        })
 
     # Build structured response for frontend
     report_name = report_key.replace("_", " ").title() if report_key else ""
@@ -1263,7 +1826,7 @@ async def run_chat(
     )
     conversation_store.add_message(session_id, "user", resolved_question)
     conversation_store.add_message(session_id, "assistant", answer_text)
-    if cache is not None and not response.error and not body.export:
+    if cache is not None and response.status == "success" and not body.export:
         await cache.store(
             resolved_question, company_code, user_id, response, response_mode,
             report_key=report_key,

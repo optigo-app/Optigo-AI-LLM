@@ -5,6 +5,12 @@
   "date_column": "jobpromisedate",
   "default_metric": "JobCost",
   "default_dimension": "department",
+  "insights": ["pareto", "vs_average", "outlier", "period_delta", "aging"],
+  "aging": {
+    "metric": "aged_jobs",
+    "dimension": "department",
+    "days": 7
+  },
   "tables": [
     "ProductionManagement_SerialNoBook"
   ],
@@ -551,6 +557,23 @@
         "job age",
         "current age",
         "days in progress"
+      ]
+    },
+    "aged_jobs": {
+      "sql": "",
+      "type": "int",
+      "calc": true,
+      "me": "CASE WHEN DATEDIFF(day, DI.jobentrydate, ISNULL(dbo.UTC_CSERVERLOCAL(GETDATE()), GETDATE())) > 7 THEN 1 ELSE 0 END",
+      "desc": "1 when the job is over 7 days old since entry (aging/stuck-job counts — always SUM)",
+      "grp": "manufacturing",
+      "computed_only": true,
+      "aliases": [
+        "aged jobs",
+        "stuck jobs",
+        "old jobs",
+        "aging jobs",
+        "jobs over a week",
+        "jobs older than 7 days"
       ]
     },
     "collectionname": {
@@ -1641,6 +1664,19 @@
         "current age",
         "days in progress",
         "age of job"
+      ]
+    },
+    "aged_jobs": {
+      "type": "count",
+      "label": "Jobs over 7 days old",
+      "aliases": [
+        "stuck jobs",
+        "aged jobs",
+        "old jobs",
+        "aging backlog",
+        "delayed jobs",
+        "jobs older than a week",
+        "jobs pending over a week"
       ]
     },
     "Total_DiamondPcs_quot": {

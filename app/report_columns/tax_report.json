@@ -4,9 +4,11 @@
   "report_id": 20,
   "default_metric": "TotalTax",
   "default_dimension": "",
+  "insights": ["pareto", "vs_average", "outlier", "period_delta"],
   "tables": [
     "Stockmanagement_dcb"
   ],
+  "source_query_file": "tax_report.sql",
   "base_filter": "Stockmanagement_Statusid = 16 AND StockDocumentNo != ''",
   "masters": [
     "billmode",
@@ -153,6 +155,57 @@
       "de": "CONVERT(varchar(4), YEAR(DI.EntryDate)) + '-W' + RIGHT('0' + CONVERT(varchar(2), DATEPART(ISO_WEEK, DI.EntryDate)), 2)",
       "desc": "Week (ISO)",
       "grp": "date"
+    },
+    "CustomerName": {
+      "sql": "TaxCustomerName",
+      "type": "string",
+      "label": "Customer code",
+      "desc": "Customer code on the invoice",
+      "grp": "customer",
+      "filter": {
+        "match": "exact",
+        "aliases": [
+          "customer code",
+          "client code"
+        ]
+      }
+    },
+    "CustomerFullName": {
+      "sql": "TaxCustomerFullName",
+      "type": "string",
+      "calc": true,
+      "de": "ISNULL(DI.TaxCustomerFullName,'')",
+      "label": "Customer",
+      "desc": "Customer / party name on the invoice",
+      "grp": "customer",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "customer",
+          "customer name",
+          "party",
+          "firm",
+          "buyer",
+          "client name"
+        ]
+      }
+    },
+    "CustomerType": {
+      "sql": "TaxCustomerGroup",
+      "type": "string",
+      "label": "Customer group",
+      "desc": "Customer segment / business class on the invoice",
+      "grp": "customer",
+      "filter": {
+        "match": "like",
+        "aliases": [
+          "customer group",
+          "customer type",
+          "business class",
+          "customer segment",
+          "group"
+        ]
+      }
     }
   },
   "special_metrics": {
@@ -173,7 +226,31 @@
     "sale type": "billmode",
     "bill type": "billmode",
     "tax mode": "taxfilter",
-    "tax status": "taxfilter"
+    "tax status": "taxfilter",
+    "customer": "CustomerFullName",
+    "customer name": "CustomerFullName",
+    "customer group": "CustomerType",
+    "customer type": "CustomerType",
+    "customer_type": "CustomerType",
+    "customertype": "CustomerType",
+    "customergroup": "CustomerType",
+    "business class": "CustomerType",
+    "businessclass": "CustomerType",
+    "segment": "CustomerType",
+    "customer segment": "CustomerType",
+    "customername": "CustomerFullName",
+    "customerfullname": "CustomerFullName",
+    "party": "CustomerFullName",
+    "party name": "CustomerFullName",
+    "firm": "CustomerFullName",
+    "firm name": "CustomerFullName",
+    "buyer": "CustomerFullName",
+    "client": "CustomerFullName",
+    "customer code": "CustomerName"
+  },
+  "name_filter_map": {
+    "customername": "LTRIM(RTRIM(ISNULL(DI.TaxCustomerName,'') + ' ' + ISNULL(DI.TaxCustomerFullName,'')))",
+    "customerfullname": "ISNULL(DI.TaxCustomerFullName,'')"
   },
   "filter_key_map": {
     "bill_mode": "billmode",
@@ -184,6 +261,14 @@
     "tax_mode": "taxfilter",
     "taxfilter": "taxfilter",
     "tax_status": "taxfilter",
+    "customer": "customername",
+    "customer_name": "customername",
+    "customername": "customername",
+    "customerfullname": "customerfullname",
+    "customer_type": "CustomerType",
+    "customertype": "CustomerType",
+    "customer_group": "CustomerType",
+    "customergroup": "CustomerType",
     "start_date": "_date",
     "end_date": "_date"
   },
@@ -344,6 +429,30 @@
       "unit": "currency",
       "label": "Tax by bill"
     },
+    "tax_by_customer_group": {
+      "patterns": [
+        "\\b(tax|gst)\\s+(per|by|wise|breakdown|breakup)\\s+(per\\s+|by\\s+|each\\s+)?(customer|client|party|firm|buyer)?\\s*(group|type|segment|class)|\\b(customer|client|party|firm|buyer)\\s+(group|type|segment|class)\\s+(wise\\s+)?(tax|gst|breakdown|breakup)\\b"
+      ],
+      "metric": "TotalTax",
+      "aggregation": "sum",
+      "dimension": "CustomerType",
+      "sort": "desc",
+      "limit": 50,
+      "unit": "currency",
+      "label": "Tax by customer group"
+    },
+    "tax_by_customer": {
+      "patterns": [
+        "\\b(tax|gst)\\s+(per|by|wise|breakdown|breakup)\\s+(per\\s+|by\\s+|each\\s+)?(customer|client|party|firm|buyer)(?!\\s*(group|type|segment|class))|\\b(customer|client|party|firm|buyer)(?!\\s*(group|type|segment|class))\\s+(wise\\s+)?(tax|gst)\\b"
+      ],
+      "metric": "TotalTax",
+      "aggregation": "sum",
+      "dimension": "CustomerFullName",
+      "sort": "desc",
+      "limit": 50,
+      "unit": "currency",
+      "label": "Tax by customer"
+    },
     "cgst": {
       "patterns": [
         "\\bcgst\\b"
@@ -388,13 +497,14 @@
     "special_rules": [
       "Tax breakdown: if user asks for CGST/SGST/IGST specifically, map to Tax1Amount/Tax3Amount/Tax2Amount respectively.",
       "Total tax = TotalTax. Total GST = TotalGST. These may differ if non-GST taxes exist.",
-      "This report only has EntryDate, StockDocumentNo and tax amount columns. Never emit customer, category, design, or other unsupported filters or dimensions."
+      "This report has invoice-level columns (EntryDate, StockDocumentNo, tax amounts) plus CustomerName/CustomerFullName resolved from the invoice's line items. Never emit category, design, or other unsupported filters or dimensions."
     ]
   },
   "suggested_questions": [
     "total tax this month",
     "total gst amount",
     "today tax summary",
-    "tax wise breakdown"
+    "tax wise breakdown",
+    "tax by customer"
   ]
 }
